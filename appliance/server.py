@@ -201,6 +201,8 @@ class Handler(BaseHTTPRequestHandler):
             return None
 
     def authenticated(self):
+        if not password_configured():
+            return False
         token = self.session_token()
         return bool(token and valid_session(token))
 
