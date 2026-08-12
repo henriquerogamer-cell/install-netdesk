@@ -5,17 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NETDESK Appliance</title>
   <style>
-    :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#08111f;color:#eef4ff}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top left,#10243d 0,#08111f 42%,#050b13 100%)}button,input{font:inherit}.wrap{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:28px 0 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:12px}.logo{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,#2b6df6,#6da2ff);font-weight:900;box-shadow:0 10px 30px #2465e255}.brand h1{font-size:19px;margin:0}.brand small{display:block;color:#8fa5bf;margin-top:2px}.badge{padding:8px 11px;border-radius:999px;border:1px solid #2a3950;background:#101b2a;color:#aac1dd;font-size:12px;font-weight:800}.hero,.panel{border:1px solid #24364f;background:linear-gradient(180deg,#0d1726ee,#0a1421ee);border-radius:18px;box-shadow:0 20px 60px #0005}.hero{padding:26px;margin-bottom:18px}.hero h2{font-size:30px;margin:0 0 8px}.hero p{margin:0;color:#92a7c1;max-width:800px;line-height:1.6}.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}.panel{padding:20px}.panel h3{margin:0 0 5px;font-size:17px}.muted{color:#8fa5bf}.login{max-width:480px;margin:9vh auto 0}.login .panel{padding:26px}.field{display:grid;gap:8px;margin:18px 0}.field label{font-size:13px;font-weight:800;color:#b8cae0}.field input{height:46px;border-radius:11px;border:1px solid #30425c;background:#07111e;color:#fff;padding:0 13px;outline:none}.field input:focus{border-color:#5992ff;box-shadow:0 0 0 3px #2b6df62a}.primary,.ghost{border:0;border-radius:11px;padding:11px 14px;font-weight:900;cursor:pointer}.primary{background:#edf4ff;color:#08111f}.ghost{background:#132238;color:#cbd9ea;border:1px solid #29405e}.error{margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid #633040;background:#32131d;color:#ffb6c0;display:none}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.card{border:1px solid #25384f;background:#0b1523;border-radius:13px;padding:15px}.card span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8299b7;font-weight:900}.card strong{display:block;font-size:18px;margin-top:7px;word-break:break-word}.checks{display:grid;gap:9px;margin-top:15px}.check{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;background:#0b1523;border:1px solid #23364f}.dot{width:10px;height:10px;border-radius:999px;background:#5d6d82}.check.ok .dot{background:#3ddc84;box-shadow:0 0 16px #3ddc8477}.check.bad .dot{background:#ff667d}.actions{display:grid;gap:12px;margin-top:15px}.action{padding:16px;border-radius:13px;border:1px solid #2b4160;background:#0d1a2a}.action h4{margin:0 0 5px}.action p{margin:0 0 12px;color:#8fa5bf;font-size:13px;line-height:1.5}.terminal{margin-top:18px;background:#04090f;border:1px solid #20334a;border-radius:13px;overflow:hidden}.terminal-head{padding:9px 12px;border-bottom:1px solid #1c2b3d;color:#8498b2;font-size:12px;font-weight:800}.terminal pre{margin:0;padding:14px;min-height:155px;max-height:250px;overflow:auto;color:#b9d3ef;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}.row{display:flex;justify-content:space-between;align-items:center;gap:10px}.logout{background:transparent;border:1px solid #2a3c55;color:#a9bdd6;border-radius:9px;padding:8px 10px;cursor:pointer}@media(max-width:850px){.grid{grid-template-columns:1fr}.cards{grid-template-columns:1fr}.top{align-items:flex-start}.hero h2{font-size:25px}}
+    :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#08111f;color:#eef4ff}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top left,#10243d 0,#08111f 42%,#050b13 100%)}button,input{font:inherit}.wrap{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:28px 0 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:12px}.logo{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,#2b6df6,#6da2ff);font-weight:900;box-shadow:0 10px 30px #2465e255}.brand h1{font-size:19px;margin:0}.brand small{display:block;color:#8fa5bf;margin-top:2px}.badge{padding:8px 11px;border-radius:999px;border:1px solid #2a3950;background:#101b2a;color:#aac1dd;font-size:12px;font-weight:800}.hero,.panel{border:1px solid #24364f;background:linear-gradient(180deg,#0d1726ee,#0a1421ee);border-radius:18px;box-shadow:0 20px 60px #0005}.hero{padding:26px;margin-bottom:18px}.hero h2{font-size:30px;margin:0 0 8px}.hero p{margin:0;color:#92a7c1;max-width:800px;line-height:1.6}.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}.panel{padding:20px}.panel h3{margin:0 0 5px;font-size:17px}.muted{color:#8fa5bf}.login{max-width:500px;margin:8vh auto 0}.login .panel{padding:26px}.field{display:grid;gap:8px;margin:16px 0}.field label{font-size:13px;font-weight:800;color:#b8cae0}.field input{height:46px;border-radius:11px;border:1px solid #30425c;background:#07111e;color:#fff;padding:0 13px;outline:none}.field input:focus{border-color:#5992ff;box-shadow:0 0 0 3px #2b6df62a}.primary,.ghost{border:0;border-radius:11px;padding:11px 14px;font-weight:900;cursor:pointer}.primary{background:#edf4ff;color:#08111f}.ghost{background:#132238;color:#cbd9ea;border:1px solid #29405e}.error{margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid #633040;background:#32131d;color:#ffb6c0;display:none}.hint{font-size:12px;color:#8299b7;line-height:1.5}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.card{border:1px solid #25384f;background:#0b1523;border-radius:13px;padding:15px}.card span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8299b7;font-weight:900}.card strong{display:block;font-size:18px;margin-top:7px;word-break:break-word}.checks{display:grid;gap:9px;margin-top:15px}.check{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;background:#0b1523;border:1px solid #23364f}.dot{width:10px;height:10px;border-radius:999px;background:#5d6d82}.check.ok .dot{background:#3ddc84;box-shadow:0 0 16px #3ddc8477}.check.bad .dot{background:#ff667d}.actions{display:grid;gap:12px;margin-top:15px}.action{padding:16px;border-radius:13px;border:1px solid #2b4160;background:#0d1a2a}.action h4{margin:0 0 5px}.action p{margin:0 0 12px;color:#8fa5bf;font-size:13px;line-height:1.5}.terminal{margin-top:18px;background:#04090f;border:1px solid #20334a;border-radius:13px;overflow:hidden}.terminal-head{padding:9px 12px;border-bottom:1px solid #1c2b3d;color:#8498b2;font-size:12px;font-weight:800}.terminal pre{margin:0;padding:14px;min-height:155px;max-height:250px;overflow:auto;color:#b9d3ef;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}.row{display:flex;justify-content:space-between;align-items:center;gap:10px}.logout{background:transparent;border:1px solid #2a3c55;color:#a9bdd6;border-radius:9px;padding:8px 10px;cursor:pointer}@media(max-width:850px){.grid{grid-template-columns:1fr}.cards{grid-template-columns:1fr}.top{align-items:flex-start}.hero h2{font-size:25px}}
   </style>
 </head>
 <body>
-  <div id="login" class="wrap login" hidden>
+  <div id="auth" class="wrap login" hidden>
     <div class="panel">
-      <div class="brand"><div class="logo">N</div><div><h1>NETDESK Appliance</h1><small>Acesso inicial protegido</small></div></div>
-      <p class="muted" style="margin-top:18px">Digite o código exibido no terminal da VM após o bootstrap.</p>
-      <div class="field"><label for="code">Código inicial</label><input id="code" autocomplete="one-time-code" placeholder="Ex.: A1B2C3D4" /></div>
-      <button class="primary" id="loginBtn">Entrar na appliance</button>
-      <div class="error" id="loginError"></div>
+      <div class="brand"><div class="logo">N</div><div><h1>NETDESK Appliance</h1><small id="authSubtitle">Acesso protegido</small></div></div>
+
+      <div id="activateForm" hidden>
+        <p class="muted" style="margin-top:18px">Primeiro acesso: informe o código exibido no terminal e crie a senha administrativa da appliance.</p>
+        <div class="field"><label for="code">Código inicial</label><input id="code" autocomplete="one-time-code" placeholder="Ex.: A1B2C3D4" /></div>
+        <div class="field"><label for="newPassword">Nova senha</label><input id="newPassword" type="password" autocomplete="new-password" placeholder="Mínimo de 10 caracteres" /></div>
+        <div class="field"><label for="confirmPassword">Confirmar senha</label><input id="confirmPassword" type="password" autocomplete="new-password" /></div>
+        <div class="hint">Depois da ativação, o código inicial deixa de funcionar para login. A senha fica armazenada somente como hash local protegido.</div>
+        <button class="primary" id="activateBtn" style="margin-top:16px">Ativar appliance</button>
+      </div>
+
+      <div id="loginForm" hidden>
+        <p class="muted" style="margin-top:18px">Digite a senha administrativa da appliance.</p>
+        <div class="field"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" /></div>
+        <button class="primary" id="loginBtn">Entrar na appliance</button>
+      </div>
+
+      <div class="error" id="authError"></div>
     </div>
   </div>
 
@@ -26,8 +39,8 @@
     </div>
 
     <section class="hero">
-      <h2>Servidor pronto para receber o NETDESK.</h2>
-      <p>A appliance está rodando de forma independente. A partir daqui ficam instalação, recuperação por backup, licença, rede, domínio e diagnóstico.</p>
+      <h2 id="heroTitle">Servidor pronto para receber o NETDESK.</h2>
+      <p id="heroText">A appliance está rodando de forma independente. A partir daqui ficam instalação, recuperação por backup, licença, rede, domínio e diagnóstico.</p>
     </section>
 
     <div class="grid">
@@ -43,7 +56,7 @@
       </section>
 
       <section class="panel">
-        <h3>Próximos caminhos</h3><div class="muted">A interface já separa instalação nova e recuperação.</div>
+        <h3>Próximos caminhos</h3><div class="muted">A interface separa instalação nova e recuperação.</div>
         <div class="actions">
           <div class="action"><h4>Nova instalação</h4><p>Instalar NETDESK e Chat, configurar banco, serviços, domínios, SSL e licença.</p><button class="ghost" disabled>Em construção</button></div>
           <div class="action"><h4>Restaurar backup</h4><p>Enviar um backup completo, validar manifesto e reconstruir a instalação nesta VM.</p><button class="ghost" disabled>Em construção</button></div>
@@ -51,22 +64,24 @@
       </section>
     </div>
 
-    <div class="terminal">
-      <div class="terminal-head">Mini terminal da appliance</div>
-      <pre id="terminal">[appliance] interface carregada\n</pre>
-    </div>
+    <div class="terminal"><div class="terminal-head">Mini terminal da appliance</div><pre id="terminal">[appliance] interface carregada\n</pre></div>
   </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const log = (text) => { const t = $('terminal'); if (!t) return; t.textContent += `[${new Date().toLocaleTimeString('pt-BR')}] ${text}\n`; t.scrollTop = t.scrollHeight; };
-const formatBytes = (n) => { n = Number(n || 0); if (!n) return '—'; const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++} return `${n.toLocaleString('pt-BR',{maximumFractionDigits:1})} ${u[i]}`; };
-async function request(path, options={}) { const r = await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.message||d.error||'Falha na appliance'); return d; }
-async function showApp(){ $('login').hidden=true; $('app').hidden=false; try{ const s=await request('/api/status'); $('publicIp').textContent=s.public_ip||'não detectado'; $('hostname').textContent=s.hostname||'—'; $('os').textContent=s.os?.pretty_name||'—'; $('disk').textContent=formatBytes(s.disk?.free_bytes); log(`Appliance online em ${s.public_ip||s.local_ip||'IP desconhecido'}.`); const p=await request('/api/preflight'); $('checks').innerHTML=p.checks.map(c=>`<div class="check ${c.ok?'ok':'bad'}"><span class="dot"></span><span>${c.label}</span></div>`).join(''); log(p.apt?'Preflight básico aprovado.':'Preflight encontrou requisito pendente.'); }catch(e){ log(`Erro: ${e.message}`); }}
-async function boot(){ try{ const s=await request('/api/session'); if(s.authenticated) return showApp(); }catch{} $('login').hidden=false; $('app').hidden=true; }
-$('loginBtn').onclick=async()=>{ $('loginError').style.display='none'; try{ await request('/api/login',{method:'POST',body:JSON.stringify({code:$('code').value})}); await showApp(); }catch(e){ $('loginError').textContent=e.message; $('loginError').style.display='block'; }};
-$('code').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('loginBtn').click()});
-$('logoutBtn').onclick=async()=>{try{await request('/api/logout',{method:'POST',body:'{}'})}catch{} location.reload()};
+const formatBytes = (n) => { n=Number(n||0); if(!n)return '—'; const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++} return `${n.toLocaleString('pt-BR',{maximumFractionDigits:1})} ${u[i]}`; };
+async function request(path,options={}){const r=await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||'Falha na appliance');return d;}
+function showError(message){$('authError').textContent=message;$('authError').style.display='block';}
+function clearError(){$('authError').style.display='none';}
+function showAuth(passwordConfigured){$('auth').hidden=false;$('app').hidden=true;$('activateForm').hidden=Boolean(passwordConfigured);$('loginForm').hidden=!passwordConfigured;$('authSubtitle').textContent=passwordConfigured?'Login administrativo':'Ativação inicial';}
+async function showApp(){ $('auth').hidden=true; $('app').hidden=false; try{const s=await request('/api/status');$('publicIp').textContent=s.public_ip||'não detectado';$('hostname').textContent=s.hostname||'—';$('os').textContent=s.os?.pretty_name||'—';$('disk').textContent=formatBytes(s.disk?.free_bytes);if(s.netdesk_installed||s.services?.netdesk){$('heroTitle').textContent='NETDESK existente detectado.';$('heroText').textContent='A appliance está conectada a esta instalação e pronta para recuperação, licença, domínio e diagnóstico.';}log(`Appliance online em ${s.public_ip||s.local_ip||'IP desconhecido'}.`);const p=await request('/api/preflight');$('checks').innerHTML=p.checks.map(c=>`<div class="check ${c.ok?'ok':'bad'}"><span class="dot"></span><span>${c.label}</span></div>`).join('');log(p.apt?'Preflight básico aprovado.':'Preflight encontrou requisito pendente.');}catch(e){log(`Erro: ${e.message}`);}}
+async function boot(){try{const s=await request('/api/session');if(s.authenticated)return showApp();return showAuth(s.password_configured);}catch{return showAuth(false);}}
+$('activateBtn').onclick=async()=>{clearError();const password=$('newPassword').value;const confirm=$('confirmPassword').value;if(password!==confirm)return showError('As senhas não conferem.');try{await request('/api/activate',{method:'POST',body:JSON.stringify({code:$('code').value,password})});await showApp();}catch(e){showError(e.message);}};
+$('loginBtn').onclick=async()=>{clearError();try{await request('/api/login',{method:'POST',body:JSON.stringify({password:$('password').value})});await showApp();}catch(e){showError(e.message);}};
+$('confirmPassword').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('activateBtn').click()});
+$('password').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('loginBtn').click()});
+$('logoutBtn').onclick=async()=>{try{await request('/api/logout',{method:'POST',body:'{}'})}catch{} location.reload();};
 boot();
 </script>
 </body>
