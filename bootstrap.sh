@@ -31,6 +31,8 @@ STATE_ROOT="/var/lib/netdesk-appliance"
 UNIT="/etc/systemd/system/netdesk-appliance.service"
 PORT="8443"
 NETDESK_ROOT="/opt/netdesk"
+ADMIN_PASSWORD="$ETC_ROOT/admin-password.json"
+INITIAL_CODE="$ETC_ROOT/initial-code"
 
 INSTALL_MODE="clean"
 if [[ -d "$NETDESK_ROOT" ]] || systemctl list-unit-files 2>/dev/null | grep -q '^netdesk-backend\.service'; then
@@ -60,9 +62,9 @@ if [[ "$INSTALL_MODE" == "existing" ]]; then
   chmod 0600 "$STATE_ROOT/netdesk-root"
 fi
 
-if [[ ! -s "$ETC_ROOT/initial-code" ]]; then
-  openssl rand -hex 4 | tr '[:lower:]' '[:upper:]' > "$ETC_ROOT/initial-code"
-  chmod 0600 "$ETC_ROOT/initial-code"
+if [[ ! -s "$ADMIN_PASSWORD" && ! -s "$INITIAL_CODE" ]]; then
+  openssl rand -hex 4 | tr '[:lower:]' '[:upper:]' > "$INITIAL_CODE"
+  chmod 0600 "$INITIAL_CODE"
 fi
 
 if [[ ! -s "$ETC_ROOT/session-secret" ]]; then
@@ -111,7 +113,8 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: 
 fi
 
 systemctl daemon-reload
-systemctl enable --now netdesk-appliance.service
+systemctl enable netdesk-appliance.service >/dev/null
+systemctl restart netdesk-appliance.service
 
 sleep 1
 if ! systemctl is-active --quiet netdesk-appliance.service; then
@@ -123,7 +126,6 @@ fi
 PUBLIC_IP="$(curl -4fsS --max-time 8 https://api.ipify.org 2>/dev/null || true)"
 LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 ACCESS_IP="${PUBLIC_IP:-${LOCAL_IP:-IP-DA-VM}}"
-CODE="$(cat "$ETC_ROOT/initial-code")"
 
 if [[ "$INSTALL_MODE" == "existing" ]]; then
   MODE_LABEL="NETDESK existente detectado e preservado"
@@ -137,7 +139,7 @@ cat <<EOF
                     NETDESK APPLIANCE
 ============================================================
 
-Instalação da appliance concluída com sucesso.
+Instalação/atualização da appliance concluída com sucesso.
 
 Modo:
   ${MODE_LABEL}
@@ -145,13 +147,30 @@ Modo:
 Acesse no navegador:
 
   https://${ACCESS_IP}:${PORT}
+EOF
+
+if [[ -s "$ADMIN_PASSWORD" ]]; then
+  cat <<'EOF'
+
+Autenticação:
+  Appliance já ativada. Use a senha administrativa criada no primeiro acesso.
+EOF
+else
+  CODE="$(cat "$INITIAL_CODE")"
+  cat <<EOF
 
 Código inicial de acesso:
 
   ${CODE}
 
-Observação: no primeiro acesso o navegador poderá alertar sobre
-certificado local. Isso é esperado até a configuração dos domínios.
+Use este código uma única vez para criar a senha administrativa.
+EOF
+fi
+
+cat <<'EOF'
+
+Observação: o navegador poderá alertar sobre certificado local até a
+configuração dos domínios e do SSL definitivo.
 
 Status do serviço:
   systemctl status netdesk-appliance
