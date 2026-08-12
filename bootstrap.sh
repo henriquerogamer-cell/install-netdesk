@@ -27,8 +27,17 @@ fi
 REPO_RAW="https://raw.githubusercontent.com/henriquerogamer-cell/install-netdesk/main"
 APP_ROOT="/opt/netdesk-appliance"
 ETC_ROOT="/etc/netdesk-appliance"
+STATE_ROOT="/var/lib/netdesk-appliance"
 UNIT="/etc/systemd/system/netdesk-appliance.service"
 PORT="8443"
+NETDESK_ROOT="/opt/netdesk"
+
+INSTALL_MODE="clean"
+if [[ -d "$NETDESK_ROOT" ]] || systemctl list-unit-files 2>/dev/null | grep -q '^netdesk-backend\.service'; then
+  INSTALL_MODE="existing"
+  echo "[NETDESK Appliance] Instalação NETDESK existente detectada."
+  echo "[NETDESK Appliance] A appliance será instalada em paralelo, sem alterar a produção."
+fi
 
 echo "[NETDESK Appliance] Preparando Ubuntu 24.04..."
 export DEBIAN_FRONTEND=noninteractive
@@ -37,11 +46,19 @@ apt-get install -y --no-install-recommends ca-certificates curl openssl python3
 
 install -d -o root -g root -m 0755 "$APP_ROOT"
 install -d -o root -g root -m 0700 "$ETC_ROOT"
+install -d -o root -g root -m 0700 "$STATE_ROOT"
 
 curl -fsSL "$REPO_RAW/appliance/server.py" -o "$APP_ROOT/server.py"
 curl -fsSL "$REPO_RAW/appliance/index.html" -o "$APP_ROOT/index.html"
 chmod 0755 "$APP_ROOT/server.py"
 chmod 0644 "$APP_ROOT/index.html"
+
+printf '%s\n' "$INSTALL_MODE" > "$STATE_ROOT/install-mode"
+chmod 0600 "$STATE_ROOT/install-mode"
+if [[ "$INSTALL_MODE" == "existing" ]]; then
+  printf '%s\n' "$NETDESK_ROOT" > "$STATE_ROOT/netdesk-root"
+  chmod 0600 "$STATE_ROOT/netdesk-root"
+fi
 
 if [[ ! -s "$ETC_ROOT/initial-code" ]]; then
   openssl rand -hex 4 | tr '[:lower:]' '[:upper:]' > "$ETC_ROOT/initial-code"
@@ -89,8 +106,6 @@ WantedBy=multi-user.target
 EOF
 chmod 0644 "$UNIT"
 
-install -d -o root -g root -m 0700 /var/lib/netdesk-appliance
-
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
   ufw allow "$PORT/tcp" >/dev/null
 fi
@@ -110,6 +125,12 @@ LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 ACCESS_IP="${PUBLIC_IP:-${LOCAL_IP:-IP-DA-VM}}"
 CODE="$(cat "$ETC_ROOT/initial-code")"
 
+if [[ "$INSTALL_MODE" == "existing" ]]; then
+  MODE_LABEL="NETDESK existente detectado e preservado"
+else
+  MODE_LABEL="VM pronta para nova instalação ou recuperação"
+fi
+
 cat <<EOF
 
 ============================================================
@@ -117,6 +138,9 @@ cat <<EOF
 ============================================================
 
 Instalação da appliance concluída com sucesso.
+
+Modo:
+  ${MODE_LABEL}
 
 Acesse no navegador:
 
