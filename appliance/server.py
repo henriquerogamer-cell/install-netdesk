@@ -21,9 +21,11 @@ STATE = Path("/var/lib/netdesk-appliance")
 INDEX = ROOT / "index.html"
 INITIAL_CODE = ETC / "initial-code"
 SESSION_SECRET = ETC / "session-secret"
+ADMIN_PASSWORD = ETC / "admin-password.json"
 TLS_CERT = ETC / "tls.crt"
 TLS_KEY = ETC / "tls.key"
 SESSION_TTL = 8 * 60 * 60
+PBKDF2_ITERATIONS = 310000
 
 
 def read_text(path: Path, default=""):
@@ -35,13 +37,7 @@ def read_text(path: Path, default=""):
 
 def public_ip():
     try:
-        result = subprocess.run(
-            ["curl", "-4fsS", "--max-time", "4", "https://api.ipify.org"],
-            capture_output=True,
-            text=True,
-            timeout=6,
-            check=False,
-        )
+        result = subprocess.run(["curl", "-4fsS", "--max-time", "4", "https://api.ipify.org"], capture_output=True, text=True, timeout=6, check=False)
         value = result.stdout.strip()
         return value if result.returncode == 0 else None
     except Exception:
@@ -61,9 +57,7 @@ def local_ip():
 
 def disk_info():
     stat = os.statvfs("/")
-    total = stat.f_frsize * stat.f_blocks
-    free = stat.f_frsize * stat.f_bavail
-    return {"total_bytes": total, "free_bytes": free}
+    return {"total_bytes": stat.f_frsize * stat.f_blocks, "free_bytes": stat.f_frsize * stat.f_bavail}
 
 
 def memory_info():
@@ -77,10 +71,7 @@ def memory_info():
                 available_kb = int(line.split()[1])
     except Exception:
         pass
-    return {
-        "total_bytes": total_kb * 1024 if total_kb else None,
-        "available_bytes": available_kb * 1024 if available_kb else None,
-    }
+    return {"total_bytes": total_kb * 1024 if total_kb else None, "available_bytes": available_kb * 1024 if available_kb else None}
 
 
 def ubuntu_info():
@@ -92,22 +83,12 @@ def ubuntu_info():
                 info[key] = value.strip().strip('"')
     except Exception:
         pass
-    return {
-        "id": info.get("ID"),
-        "version": info.get("VERSION_ID"),
-        "pretty_name": info.get("PRETTY_NAME"),
-    }
+    return {"id": info.get("ID"), "version": info.get("VERSION_ID"), "pretty_name": info.get("PRETTY_NAME")}
 
 
 def service_active(name):
     try:
-        result = subprocess.run(
-            ["systemctl", "is-active", name],
-            capture_output=True,
-            text=True,
-            timeout=4,
-            check=False,
-        )
+        result = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=4, check=False)
         return result.stdout.strip() == "active"
     except Exception:
         return False
@@ -124,14 +105,44 @@ def status_payload():
         "os": ubuntu_info(),
         "disk": disk_info(),
         "memory": memory_info(),
-        "services": {
-            "appliance": service_active("netdesk-appliance.service"),
-            "netdesk": service_active("netdesk-backend.service"),
-        },
+        "services": {"appliance": service_active("netdesk-appliance.service"), "netdesk": service_active("netdesk-backend.service")},
         "netdesk_installed": Path("/opt/netdesk").exists(),
         "chat_installed": Path("/opt/chat").exists(),
         "timestamp": int(time.time()),
     }
+
+
+def password_configured():
+    return ADMIN_PASSWORD.is_file() and ADMIN_PASSWORD.stat().st_size > 0
+
+
+def password_record(password):
+    salt = secrets.token_bytes(32)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
+    return {"algorithm": "pbkdf2_sha256", "iterations": PBKDF2_ITERATIONS, "salt": salt.hex(), "hash": digest.hex(), "created_at": int(time.time())}
+
+
+def save_password(password):
+    tmp = ADMIN_PASSWORD.with_suffix(".tmp")
+    tmp.write_text(json.dumps(password_record(password), indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, ADMIN_PASSWORD)
+
+
+def verify_password(password):
+    try:
+        data = json.loads(ADMIN_PASSWORD.read_text(encoding="utf-8"))
+        salt = bytes.fromhex(data["salt"])
+        expected = bytes.fromhex(data["hash"])
+        iterations = int(data.get("iterations", PBKDF2_ITERATIONS))
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+def valid_password_shape(password):
+    return isinstance(password, str) and len(password) >= 10 and len(password) <= 128
 
 
 def sign_session(timestamp, nonce):
@@ -153,8 +164,14 @@ def valid_session(token):
         return False
 
 
+def session_cookie():
+    timestamp = int(time.time())
+    token = sign_session(timestamp, secrets.token_hex(16))
+    return f"netdesk_appliance_session={token}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Strict"
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NETDESK-Appliance/0.1"
+    server_version = "NETDESK-Appliance/0.2"
 
     def log_message(self, fmt, *args):
         print(f"[appliance] {self.address_string()} {fmt % args}")
@@ -175,10 +192,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def session_token(self):
-        raw = self.headers.get("Cookie", "")
         jar = cookies.SimpleCookie()
         try:
-            jar.load(raw)
+            jar.load(self.headers.get("Cookie", ""))
             morsel = jar.get("netdesk_appliance_session")
             return morsel.value if morsel else None
         except Exception:
@@ -213,7 +229,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/session":
-            return self.send_json(200, {"authenticated": self.authenticated()})
+            return self.send_json(200, {"authenticated": self.authenticated(), "password_configured": password_configured()})
 
         if path == "/api/status":
             if not self.authenticated():
@@ -236,31 +252,47 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path == "/api/login":
+
+        if path == "/api/activate":
+            if password_configured():
+                return self.send_json(409, {"error": "already_activated", "message": "A appliance já possui senha administrativa."})
             data = self.body_json()
             supplied = str(data.get("code", "")).strip().upper()
             expected = read_text(INITIAL_CODE).strip().upper()
+            password = data.get("password")
             if not expected or not hmac.compare_digest(supplied, expected):
                 time.sleep(0.4)
                 return self.send_json(401, {"error": "invalid_code", "message": "Código inicial inválido."})
-            timestamp = int(time.time())
-            token = sign_session(timestamp, secrets.token_hex(16))
-            headers = {
-                "Set-Cookie": f"netdesk_appliance_session={token}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Strict",
-            }
-            return self.send_json(200, {"ok": True}, headers=headers)
+            if not valid_password_shape(password):
+                return self.send_json(400, {"error": "weak_password", "message": "A senha deve ter entre 10 e 128 caracteres."})
+            save_password(password)
+            try:
+                INITIAL_CODE.unlink()
+            except FileNotFoundError:
+                pass
+            return self.send_json(201, {"ok": True, "activated": True}, {"Set-Cookie": session_cookie()})
+
+        if path == "/api/login":
+            if not password_configured():
+                return self.send_json(409, {"error": "activation_required", "message": "Ative a appliance usando o código inicial antes do primeiro login."})
+            password = str(self.body_json().get("password", ""))
+            if not verify_password(password):
+                time.sleep(0.4)
+                return self.send_json(401, {"error": "invalid_password", "message": "Senha inválida."})
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": session_cookie()})
 
         if path == "/api/logout":
-            headers = {"Set-Cookie": "netdesk_appliance_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"}
-            return self.send_json(200, {"ok": True}, headers=headers)
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": "netdesk_appliance_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
 
         return self.send_json(404, {"error": "not_found"})
 
 
 def main():
-    for required in (INDEX, INITIAL_CODE, SESSION_SECRET, TLS_CERT, TLS_KEY):
+    for required in (INDEX, SESSION_SECRET, TLS_CERT, TLS_KEY):
         if not required.exists():
             raise SystemExit(f"Arquivo obrigatório ausente: {required}")
+    if not password_configured() and not INITIAL_CODE.exists():
+        raise SystemExit(f"Arquivo obrigatório ausente: {INITIAL_CODE}")
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
