@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import base64
 import hashlib
 import hmac
 import json
@@ -7,6 +8,7 @@ import secrets
 import socket
 import ssl
 import subprocess
+import tempfile
 import time
 from datetime import date, timedelta
 from http import cookies
@@ -27,10 +29,15 @@ TLS_CERT = ETC / "tls.crt"
 TLS_KEY = ETC / "tls.key"
 INSTALLATION_ID = STATE / "installation-id"
 LICENSE_STATE = STATE / "license-state.json"
+ACTIVE_LICENSE = STATE / "active-license.ndlic"
+LICENSE_HISTORY = STATE / "license-history"
 SESSION_TTL = 8 * 60 * 60
 PBKDF2_ITERATIONS = 310000
 TLS_HANDSHAKE_TIMEOUT = 8
 CLIENT_TIMEOUT = 30
+
+TRUSTED_LICENSE_PUBLIC_KEY_B64 = "PFWxwPoeXyP/co89fojLwvS4TcV9gILpMMbwAv7y1r8="
+TRUSTED_LICENSE_PUBLIC_KEY = f"LICENSE-STUDIO-ED25519:{TRUSTED_LICENSE_PUBLIC_KEY_B64}"
 
 
 def read_text(path: Path, default=""):
@@ -106,6 +113,136 @@ def license_request(customer=None):
         "current_license_id": data.get("license_id"),
         "current_expires_at": data.get("expires_at"),
     }
+
+
+def canonical_license_payload(payload):
+    required = (
+        "format",
+        "license_uuid",
+        "product",
+        "license_id",
+        "customer",
+        "installation_id",
+        "issued_at",
+        "expires_at",
+        "replaces_license_id",
+        "features",
+    )
+    missing = [name for name in required if name not in payload]
+    if missing:
+        raise ValueError(f"Licença incompleta: {', '.join(missing)}")
+    ordered = {name: payload[name] for name in required}
+    return json.dumps(ordered, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def trusted_public_pem():
+    raw = base64.b64decode(TRUSTED_LICENSE_PUBLIC_KEY_B64, validate=True)
+    if len(raw) != 32:
+        raise ValueError("Chave pública de licença inválida.")
+    der = bytes.fromhex("302a300506032b6570032100") + raw
+    encoded = base64.b64encode(der).decode("ascii")
+    return "-----BEGIN PUBLIC KEY-----\n" + "\n".join(encoded[i:i+64] for i in range(0, len(encoded), 64)) + "\n-----END PUBLIC KEY-----\n"
+
+
+def verify_ed25519(payload_bytes: bytes, signature_b64: str):
+    try:
+        signature = base64.b64decode(signature_b64, validate=True)
+    except Exception as exc:
+        raise ValueError("Assinatura da licença inválida.") from exc
+    if len(signature) != 64:
+        raise ValueError("Assinatura da licença inválida.")
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="netdesk-license-", dir=str(STATE)) as tmp:
+            tmp_path = Path(tmp)
+            pub = tmp_path / "public.pem"
+            msg = tmp_path / "payload.bin"
+            sig = tmp_path / "signature.bin"
+            pub.write_text(trusted_public_pem(), encoding="ascii")
+            msg.write_bytes(payload_bytes)
+            sig.write_bytes(signature)
+            result = subprocess.run(
+                [
+                    "openssl", "pkeyutl", "-verify",
+                    "-pubin", "-inkey", str(pub),
+                    "-rawin", "-in", str(msg),
+                    "-sigfile", str(sig),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+    except FileNotFoundError as exc:
+        raise ValueError("OpenSSL não está disponível para validar a licença.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("A validação criptográfica da licença excedeu o tempo limite.") from exc
+
+    if result.returncode != 0:
+        raise ValueError("Assinatura da licença não confere.")
+
+
+def install_license(raw: str):
+    try:
+        envelope = json.loads(raw)
+    except Exception as exc:
+        raise ValueError("Arquivo de licença inválido.") from exc
+
+    if not isinstance(envelope, dict) or envelope.get("schema") != "license-studio/ndlic-v2":
+        raise ValueError("Formato de licença não reconhecido.")
+    if envelope.get("public_key") != TRUSTED_LICENSE_PUBLIC_KEY:
+        raise ValueError("A licença não foi emitida por uma autoridade reconhecida.")
+
+    payload = envelope.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("Conteúdo da licença inválido.")
+
+    payload_bytes = canonical_license_payload(payload)
+    verify_ed25519(payload_bytes, str(envelope.get("signature") or ""))
+
+    current = license_state()
+    if str(payload.get("product") or "").upper() != "NETDESK":
+        raise ValueError("Esta licença não pertence ao produto NETDESK.")
+    if payload.get("installation_id") != current.get("installation_id"):
+        raise ValueError("Esta licença pertence a outra instalação.")
+    if payload.get("replaces_license_id") != current.get("license_id"):
+        raise ValueError("Esta licença foi emitida para substituir outra licença e não pode ser aplicada ao estado atual.")
+
+    customer = str(payload.get("customer") or "").strip()
+    license_id = str(payload.get("license_id") or "").strip()
+    issued_at = str(payload.get("issued_at") or "").strip()
+    expires_at = str(payload.get("expires_at") or "").strip()
+    if not customer or not license_id or not issued_at or not expires_at:
+        raise ValueError("A licença não possui todos os dados obrigatórios.")
+
+    try:
+        expiry = date.fromisoformat(expires_at[:10])
+    except Exception as exc:
+        raise ValueError("A validade da licença é inválida.") from exc
+    if expiry < date.today():
+        raise ValueError("A licença informada já está expirada.")
+
+    LICENSE_HISTORY.mkdir(parents=True, exist_ok=True)
+    if ACTIVE_LICENSE.exists():
+        previous_id = str(current.get("license_id") or "license")
+        history_name = f"{int(time.time())}-{previous_id}.ndlic"
+        write_private_text(LICENSE_HISTORY / history_name, ACTIVE_LICENSE.read_text(encoding="utf-8"))
+
+    write_private_text(ACTIVE_LICENSE, json.dumps(envelope, ensure_ascii=False, indent=2) + "\n")
+    next_state = {
+        "schema": "netdesk-appliance/license-state-v1",
+        "product": "NETDESK",
+        "installation_id": current["installation_id"],
+        "customer": customer,
+        "license_id": license_id,
+        "status": "active",
+        "issued_at": issued_at,
+        "expires_at": expires_at[:10],
+        "replaces_license_id": payload.get("replaces_license_id"),
+        "activated_at": int(time.time()),
+    }
+    write_private_text(LICENSE_STATE, json.dumps(next_state, ensure_ascii=False, indent=2) + "\n")
+    return next_state
 
 
 def public_ip():
@@ -272,7 +409,7 @@ class SecureThreadingHTTPServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NETDESK-Appliance/0.4"
+    server_version = "NETDESK-Appliance/0.5"
 
     def log_message(self, fmt, *args):
         print(f"[appliance] {self.address_string()} {fmt % args}")
@@ -309,7 +446,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def body_json(self):
         try:
-            length = min(int(self.headers.get("Content-Length", "0")), 65536)
+            length = min(int(self.headers.get("Content-Length", "0")), 262144)
             raw = self.rfile.read(length)
             return json.loads(raw.decode("utf-8")) if raw else {}
         except Exception:
@@ -408,6 +545,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, payload)
             except ValueError as exc:
                 return self.send_json(400, {"error": "customer_required", "message": str(exc)})
+
+        if path == "/api/license/import":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            data = self.body_json()
+            raw = data.get("license_raw")
+            if not isinstance(raw, str) or not raw.strip():
+                return self.send_json(400, {"error": "license_required", "message": "Selecione um arquivo .ndlic."})
+            try:
+                installed = install_license(raw)
+                return self.send_json(200, {"ok": True, "license": installed})
+            except ValueError as exc:
+                return self.send_json(400, {"error": "invalid_license", "message": str(exc)})
+            except Exception:
+                return self.send_json(500, {"error": "license_install_failed", "message": "Não foi possível instalar a licença."})
 
         return self.send_json(404, {"error": "not_found"})
 
