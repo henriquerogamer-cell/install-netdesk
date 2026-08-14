@@ -56,9 +56,10 @@ install -d -o root -g root -m 0755 "$PUBLIC_LICENSE_ROOT"
 
 curl -fsSL "$REPO_RAW/appliance/server.py" -o "$APP_ROOT/server.py"
 curl -fsSL "$REPO_RAW/appliance/index.html" -o "$APP_ROOT/index.html"
+curl -fsSL "$REPO_RAW/appliance/restore_engine.py" -o "$APP_ROOT/restore_engine.py"
 curl -fsSL "$REPO_RAW/appliance/sync-license-state.sh" -o "$APP_ROOT/sync-license-state.sh"
 chmod 0755 "$APP_ROOT/server.py" "$APP_ROOT/sync-license-state.sh"
-chmod 0644 "$APP_ROOT/index.html"
+chmod 0644 "$APP_ROOT/index.html" "$APP_ROOT/restore_engine.py"
 
 printf '%s\n' "$INSTALL_MODE" > "$STATE_ROOT/install-mode"
 chmod 0600 "$STATE_ROOT/install-mode"
