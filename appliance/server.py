@@ -245,6 +245,52 @@ def install_license(raw: str):
     return next_state
 
 
+LICENSE_IMPORT_UI = r"""
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const actions = document.querySelector('.license-actions');
+  if (!actions || document.getElementById('importLicenseBtn')) return;
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.id = 'importLicenseFile';
+  input.style.display = 'none';
+
+  const button = document.createElement('button');
+  button.id = 'importLicenseBtn';
+  button.className = 'primary';
+  button.textContent = 'Importar licença';
+
+  button.addEventListener('click', () => {
+    input.value = '';
+    input.click();
+  });
+
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    button.disabled = true;
+    try {
+      const raw = await file.text();
+      const result = await request('/api/license/import', {
+        method: 'POST',
+        body: JSON.stringify({ license_raw: raw })
+      });
+      log(`Licença ${result.license.license_id} instalada. Validade: ${formatDate(result.license.expires_at)}.`);
+      await loadLicense();
+    } catch (error) {
+      log(`Licença rejeitada: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  actions.appendChild(button);
+  actions.appendChild(input);
+});
+</script>
+"""
+
 def public_ip():
     try:
         result = subprocess.run(["curl", "-4fsS", "--max-time", "4", "https://api.ipify.org"], capture_output=True, text=True, timeout=6, check=False)
@@ -462,7 +508,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             try:
-                body = INDEX.read_bytes()
+                html = INDEX.read_text(encoding="utf-8")
+                body = html.replace("</body>", LICENSE_IMPORT_UI + "\n</body>").encode("utf-8")
             except Exception:
                 return self.send_json(500, {"error": "interface_missing"})
             self.send_response(200)
