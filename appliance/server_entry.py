@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-import json
 import ssl
-from pathlib import Path
 from urllib.parse import urlparse
 
 import server as base
-from installer_engine import install_preflight, install_status, queue_install
+from installer_engine_v2 import install_preflight, install_status, queue_install
 
 INSTALL_UI = r'''
 <style>
@@ -32,11 +30,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     <div id="installEligibility" class="install-status">Verificando esta máquina...</div>
     <div class="install-form">
       <div class="field"><label>Empresa</label><input id="installCompany" placeholder="Nome da empresa" /></div>
-      <div class="field"><label>Usuário proprietário</label><input id="installOwner" placeholder="Ex.: administrador" autocomplete="username" /></div>
+      <div class="field"><label>Usuário proprietário do NETDESK</label><input id="installOwner" placeholder="Ex.: administrador" autocomplete="username" /></div>
       <div class="field"><label>E-mail do proprietário</label><input id="installOwnerEmail" type="email" placeholder="Opcional" /></div>
-      <div class="field"><label>Senha do proprietário</label><input id="installOwnerPassword" type="password" autocomplete="new-password" placeholder="Mínimo 10 caracteres" /></div>
+      <div class="field"><label>Senha do proprietário do NETDESK</label><input id="installOwnerPassword" type="password" autocomplete="new-password" placeholder="Mínimo 10 caracteres" /></div>
+      <div class="field wide"><label>Senha do usuário Linux netdesk</label><input id="installLinuxPassword" type="password" autocomplete="new-password" placeholder="Usuário da máquina com sudo/root, mínimo 10 caracteres" /></div>
+      <div class="field"><label>Domínio do NETDESK</label><input id="installNetdeskDomain" placeholder="netdesk.empresa.com.br" /></div>
+      <div class="field"><label>Domínio do CHAT</label><input id="installChatDomain" placeholder="chat.empresa.com.br" /></div>
       <div class="field wide"><label>Token GitHub temporário</label><input id="installGithubToken" type="password" autocomplete="off" placeholder="Acesso somente aos repos privados NETDESK e CHAT" /></div>
-      <div class="wide install-note">O token é usado apenas pelo job para baixar os dois repositórios privados. Ele não é gravado em logs e o arquivo transitório é apagado assim que o agente privilegiado assume a instalação.</div>
+      <div class="wide install-note">O instalador cria o usuário Linux <strong>netdesk</strong> com senha e acesso ao grupo <strong>sudo</strong>, além do grupo Docker. Ele será o usuário administrativo da máquina e também o dono de /opt/netdesk e /opt/chat. Os dois domínios são configurados no Nginx; se o DNS já apontar para este servidor, o HTTPS é emitido automaticamente.</div>
+      <div class="wide install-note">O token GitHub é usado apenas pelo job para baixar os dois repositórios privados. Ele não é gravado em logs e o arquivo transitório é apagado assim que o agente privilegiado assume a instalação.</div>
     </div>
     <div class="install-buttons"><button id="installStartBtn" class="primary">Iniciar instalação</button><button id="installRefreshBtn" class="ghost">Atualizar estado</button></div>
     <div id="installStage" class="install-status">Instalador ocioso.</div>
@@ -44,7 +46,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const licensePanel = document.querySelector('.license-panel');
   if (licensePanel) licensePanel.parentNode.insertBefore(panel, licensePanel); else document.getElementById('app').appendChild(panel);
 
-  const stageLabels = {idle:'Ocioso',queued:'Na fila',dependencies:'Dependências',source:'Código fonte',database:'PostgreSQL',netdesk:'NETDESK',chat:'CHAT',nginx:'Nginx',health:'Health-check',completed:'Concluído',failed:'Falhou'};
+  const stageLabels = {idle:'Ocioso',queued:'Na fila',dependencies:'Dependências',source:'Código fonte',database:'PostgreSQL',netdesk:'NETDESK',chat:'CHAT',nginx:'Nginx',health:'Health-check',domains:'Domínios e HTTPS',completed:'Concluído',failed:'Falhou'};
   let pollTimer = null;
 
   async function loadInstallStatus(){
@@ -73,6 +75,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       owner_username:document.getElementById('installOwner').value.trim(),
       owner_email:document.getElementById('installOwnerEmail').value.trim(),
       owner_password:document.getElementById('installOwnerPassword').value,
+      linux_password:document.getElementById('installLinuxPassword').value,
+      netdesk_domain:document.getElementById('installNetdeskDomain').value.trim(),
+      chat_domain:document.getElementById('installChatDomain').value.trim(),
       github_token:document.getElementById('installGithubToken').value.trim(),
     };
     if(!confirm('Iniciar Nova instalação nesta máquina? O instalador só prossegue se não houver NETDESK/CHAT existente.')) return;
@@ -80,6 +85,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       await request('/api/install/start',{method:'POST',body:JSON.stringify(payload)});
       document.getElementById('installGithubToken').value='';
       document.getElementById('installOwnerPassword').value='';
+      document.getElementById('installLinuxPassword').value='';
       log('Job de Nova instalação iniciado.');
       await loadInstallStatus();
     }catch(e){log(`Instalação não iniciada: ${e.message}`);await loadInstallStatus();}
@@ -91,7 +97,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 
 class Handler(base.Handler):
-    server_version = 'NETDESK-Appliance/0.7'
+    server_version = 'NETDESK-Appliance/0.8'
 
     def do_GET(self):
         path = urlparse(self.path).path
