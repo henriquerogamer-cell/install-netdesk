@@ -9,7 +9,10 @@ import installer_engine_v2 as v2
 def prepare_linux_admin(password):
     v2.legacy._log('Preparando usuário Linux administrativo netdesk...')
     subprocess.run(['apt-get', 'update', '-y'], check=True)
-    subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends', 'sudo'], check=True)
+    subprocess.run([
+        'apt-get', 'install', '-y', '--no-install-recommends',
+        'sudo', 'build-essential'
+    ], check=True)
 
     if subprocess.run(['id', 'netdesk'], capture_output=True).returncode != 0:
         subprocess.run([
