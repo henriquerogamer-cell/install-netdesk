@@ -62,9 +62,10 @@ curl -fsSL "$REPO_RAW/appliance/index.html" -o "$APP_ROOT/index.html"
 curl -fsSL "$REPO_RAW/appliance/restore_engine.py" -o "$APP_ROOT/restore_engine.py"
 curl -fsSL "$REPO_RAW/appliance/installer_engine.py" -o "$APP_ROOT/installer_engine.py"
 curl -fsSL "$REPO_RAW/appliance/installer_engine_v2.py" -o "$APP_ROOT/installer_engine_v2.py"
+curl -fsSL "$REPO_RAW/appliance/installer_engine_v3.py" -o "$APP_ROOT/installer_engine_v3.py"
 curl -fsSL "$REPO_RAW/appliance/sync-license-state.sh" -o "$APP_ROOT/sync-license-state.sh"
 chmod 0755 "$APP_ROOT/server.py" "$APP_ROOT/server_entry.py" "$APP_ROOT/sync-license-state.sh"
-chmod 0644 "$APP_ROOT/index.html" "$APP_ROOT/restore_engine.py" "$APP_ROOT/installer_engine.py" "$APP_ROOT/installer_engine_v2.py"
+chmod 0644 "$APP_ROOT/index.html" "$APP_ROOT/restore_engine.py" "$APP_ROOT/installer_engine.py" "$APP_ROOT/installer_engine_v2.py" "$APP_ROOT/installer_engine_v3.py"
 
 printf '%s\n' "$INSTALL_MODE" > "$STATE_ROOT/install-mode"
 chmod 0600 "$STATE_ROOT/install-mode"
@@ -130,7 +131,7 @@ Type=oneshot
 User=root
 Group=root
 WorkingDirectory=/opt/netdesk-appliance
-ExecStart=/usr/bin/python3 /opt/netdesk-appliance/installer_engine_v2.py --agent
+ExecStart=/usr/bin/python3 /opt/netdesk-appliance/installer_engine_v3.py --agent
 TimeoutStartSec=infinity
 EOF
 chmod 0644 "$INSTALL_AGENT_UNIT"
