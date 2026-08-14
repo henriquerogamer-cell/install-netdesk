@@ -14,7 +14,9 @@ from datetime import date, timedelta
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
+
+from restore_engine import clear_pending_restore, pending_restore_status, save_restore_upload
 
 HOST = "0.0.0.0"
 PORT = 8443
@@ -113,6 +115,17 @@ def license_request(customer=None):
         "current_license_id": data.get("license_id"),
         "current_expires_at": data.get("expires_at"),
     }
+
+
+def operational_license():
+    data = license_state()
+    status = str(data.get("status") or "").lower()
+    expires_at = str(data.get("expires_at") or "")[:10]
+    try:
+        expiry = date.fromisoformat(expires_at)
+    except Exception:
+        expiry = None
+    return bool(status in {"active", "demo"} and expiry and expiry >= date.today())
 
 
 def canonical_license_payload(payload):
@@ -455,7 +468,7 @@ class SecureThreadingHTTPServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NETDESK-Appliance/0.5"
+    server_version = "NETDESK-Appliance/0.6"
 
     def log_message(self, fmt, *args):
         print(f"[appliance] {self.address_string()} {fmt % args}")
@@ -534,6 +547,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(401, {"error": "authentication_required"})
             return self.send_json(200, license_state())
 
+        if path == "/api/restore/pending":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            return self.send_json(200, {"pending": pending_restore_status()})
+
         if path == "/api/preflight":
             if not self.authenticated():
                 return self.send_json(401, {"error": "authentication_required"})
@@ -607,6 +625,30 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(400, {"error": "invalid_license", "message": str(exc)})
             except Exception:
                 return self.send_json(500, {"error": "license_install_failed", "message": "Não foi possível instalar a licença."})
+
+        if path == "/api/restore/upload":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            if not operational_license():
+                return self.send_json(423, {"error": "license_inactive", "message": "Ative ou renove a licença da appliance antes de iniciar uma recuperação."})
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except Exception:
+                content_length = 0
+            filename = unquote(str(self.headers.get("X-Restore-Filename", "") or ""))
+            try:
+                result = save_restore_upload(self.rfile, content_length, filename)
+                return self.send_json(201, {"ok": True, "restore": result})
+            except ValueError as exc:
+                return self.send_json(400, {"error": "restore_upload_invalid", "message": str(exc)})
+            except Exception as exc:
+                print(f"[restore] upload/preflight failed: {exc}")
+                return self.send_json(500, {"error": "restore_upload_failed", "message": "Não foi possível receber ou validar o backup."})
+
+        if path == "/api/restore/clear":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            return self.send_json(200, clear_pending_restore())
 
         return self.send_json(404, {"error": "not_found"})
 
