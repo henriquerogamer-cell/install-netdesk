@@ -270,7 +270,7 @@ def run_agent():
         _set_status('netdesk', running=True)
         _log('Instalando backend e frontend NETDESK...')
         _run(['runuser', '-u', 'netdesk', '--', 'bash', '-lc', 'cd /opt/netdesk/backend && npm ci --omit=dev'])
-        _run(['runuser', '-u', 'netdesk', '--', 'bash', '-lc', 'cd /opt/netdesk/frontend && npm ci && npm run build'])
+        _run(['runuser', '-u', 'netdesk', '--', 'bash', '-lc', 'cd /opt/netdesk/frontend && npm install --no-audit --no-fund && npm run build'])
 
         service = '''[Unit]\nDescription=NETDESK Backend\nAfter=network-online.target docker.service\nWants=network-online.target docker.service\n\n[Service]\nType=simple\nUser=netdesk\nGroup=netdesk\nWorkingDirectory=/opt/netdesk/backend\nEnvironmentFile=/opt/netdesk/backend/.env\nExecStart=/usr/bin/node /opt/netdesk/backend/src/server.js\nRestart=on-failure\nRestartSec=3\n\n[Install]\nWantedBy=multi-user.target\n'''
         _write(Path('/etc/systemd/system/netdesk-backend.service'), service, 0o644)
@@ -301,7 +301,7 @@ ON CONFLICT (username) DO NOTHING;
         _write(CHAT_ROOT / 'backend/.env', chat_env, 0o600)
         _run(['chown', 'netdesk:netdesk', str(CHAT_ROOT / 'backend/.env')])
         _run(['bash', str(CHAT_ROOT / 'backend/scripts/install-production.sh')])
-        _run(['runuser', '-u', 'netdesk', '--', 'bash', '-lc', 'cd /opt/chat && npm ci && npm run build'])
+        _run(['runuser', '-u', 'netdesk', '--', 'bash', '-lc', 'cd /opt/chat && npm install --no-audit --no-fund && npm run build'])
 
         _set_status('nginx', running=True)
         _log('Configurando acesso inicial por IP...')
