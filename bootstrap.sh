@@ -28,7 +28,10 @@ REPO_RAW="https://raw.githubusercontent.com/henriquerogamer-cell/install-netdesk
 APP_ROOT="/opt/netdesk-appliance"
 ETC_ROOT="/etc/netdesk-appliance"
 STATE_ROOT="/var/lib/netdesk-appliance"
+PUBLIC_LICENSE_ROOT="/var/lib/netdesk-license"
 UNIT="/etc/systemd/system/netdesk-appliance.service"
+LICENSE_SYNC_UNIT="/etc/systemd/system/netdesk-license-sync.service"
+LICENSE_SYNC_PATH_UNIT="/etc/systemd/system/netdesk-license-sync.path"
 PORT="8443"
 NETDESK_ROOT="/opt/netdesk"
 ADMIN_PASSWORD="$ETC_ROOT/admin-password.json"
@@ -49,10 +52,12 @@ apt-get install -y --no-install-recommends ca-certificates curl openssl python3
 install -d -o root -g root -m 0755 "$APP_ROOT"
 install -d -o root -g root -m 0700 "$ETC_ROOT"
 install -d -o root -g root -m 0700 "$STATE_ROOT"
+install -d -o root -g root -m 0755 "$PUBLIC_LICENSE_ROOT"
 
 curl -fsSL "$REPO_RAW/appliance/server.py" -o "$APP_ROOT/server.py"
 curl -fsSL "$REPO_RAW/appliance/index.html" -o "$APP_ROOT/index.html"
-chmod 0755 "$APP_ROOT/server.py"
+curl -fsSL "$REPO_RAW/appliance/sync-license-state.sh" -o "$APP_ROOT/sync-license-state.sh"
+chmod 0755 "$APP_ROOT/server.py" "$APP_ROOT/sync-license-state.sh"
 chmod 0644 "$APP_ROOT/index.html"
 
 printf '%s\n' "$INSTALL_MODE" > "$STATE_ROOT/install-mode"
@@ -101,12 +106,36 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
-ReadWritePaths=/etc/netdesk-appliance /opt/netdesk-appliance /var/lib/netdesk-appliance /tmp
+ReadWritePaths=/etc/netdesk-appliance /opt/netdesk-appliance /var/lib/netdesk-appliance /var/lib/netdesk-license /tmp
 
 [Install]
 WantedBy=multi-user.target
 EOF
 chmod 0644 "$UNIT"
+
+cat > "$LICENSE_SYNC_UNIT" <<'EOF'
+[Unit]
+Description=Publica estado sanitizado da licença NETDESK
+
+[Service]
+Type=oneshot
+ExecStart=/opt/netdesk-appliance/sync-license-state.sh
+EOF
+chmod 0644 "$LICENSE_SYNC_UNIT"
+
+cat > "$LICENSE_SYNC_PATH_UNIT" <<'EOF'
+[Unit]
+Description=Observa mudanças no estado da licença NETDESK
+
+[Path]
+PathChanged=/var/lib/netdesk-appliance/license-state.json
+PathExists=/var/lib/netdesk-appliance/license-state.json
+Unit=netdesk-license-sync.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 "$LICENSE_SYNC_PATH_UNIT"
 
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
   ufw allow "$PORT/tcp" >/dev/null
@@ -114,7 +143,9 @@ fi
 
 systemctl daemon-reload
 systemctl enable netdesk-appliance.service >/dev/null
+systemctl enable --now netdesk-license-sync.path >/dev/null
 systemctl restart netdesk-appliance.service
+"$APP_ROOT/sync-license-state.sh" || true
 
 sleep 1
 if ! systemctl is-active --quiet netdesk-appliance.service; then
