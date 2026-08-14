@@ -228,6 +228,15 @@ def _apply_database_migrations():
     _log(f'Aplicando {len(migrations)} migrações do NETDESK em ordem...')
     for migration in migrations:
         _apply_sql_file(migration)
+
+    # Compatibilidade obrigatória para instalações limpas: a autenticação atual
+    # consulta esta coluna, mas o esquema-base histórico ainda não a declara.
+    _run([
+        'docker', 'exec', 'netdesk-postgres',
+        'psql', '-U', 'netdesk', '-d', 'netdesk',
+        '-v', 'ON_ERROR_STOP=1',
+        '-c', 'ALTER TABLE users ADD COLUMN IF NOT EXISTS muvdesk_user_id TEXT',
+    ])
     _log('Esquema e migrações do banco NETDESK aplicados com sucesso.')
 
 
@@ -316,14 +325,14 @@ def run_agent():
         _run(['systemctl', 'daemon-reload'])
         _run(['systemctl', 'enable', '--now', 'netdesk-backend'])
 
-        _log('Criando proprietário inicial system_owner...')
+        _log('Criando proprietário inicial master_admin...')
         hash_cmd = "const b=require('/opt/netdesk/backend/node_modules/bcryptjs'); b.hash(process.argv[1],12).then(x=>process.stdout.write(x))"
         password_hash = subprocess.check_output(['node', '-e', hash_cmd, owner_password], text=True).strip()
         sql = f"""
-INSERT INTO roles (name, description) VALUES ('system_owner','Proprietário máximo do sistema') ON CONFLICT (name) DO NOTHING;
+INSERT INTO roles (name, description) VALUES ('master_admin','Proprietário máximo do sistema') ON CONFLICT (name) DO NOTHING;
 INSERT INTO users (role_id,name,email,username,password_hash,is_active)
 SELECT id,{_sql_literal(owner_username)},{_sql_literal(owner_email)},{_sql_literal(owner_username)},{_sql_literal(password_hash)},true
-FROM roles WHERE name='system_owner'
+FROM roles WHERE name='master_admin'
 ON CONFLICT (username) DO NOTHING;
 """
         _run(['docker', 'exec', 'netdesk-postgres', 'psql', '-U', 'netdesk', '-d', 'netdesk', '-v', 'ON_ERROR_STOP=1', '-c', sql], secret_values=[password_hash])
