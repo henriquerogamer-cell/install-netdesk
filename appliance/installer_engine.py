@@ -195,6 +195,42 @@ def _wait_postgres():
     raise RuntimeError('PostgreSQL não ficou disponível dentro do tempo esperado.')
 
 
+def _apply_sql_file(path):
+    _log(f'Aplicando migração do banco: {path.name}')
+    args = [
+        'docker', 'exec', '-i', 'netdesk-postgres',
+        'psql', '-U', 'netdesk', '-d', 'netdesk',
+        '-v', 'ON_ERROR_STOP=1',
+    ]
+    with path.open('r', encoding='utf-8') as sql_file:
+        proc = subprocess.Popen(
+            args,
+            stdin=sql_file,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        for raw in proc.stdout:
+            line = raw.rstrip()
+            if line:
+                _log(line)
+        code = proc.wait()
+    if code != 0:
+        raise RuntimeError(f'Migração falhou ({code}): {path.name}')
+
+
+def _apply_database_migrations():
+    migrations_root = NETDESK_ROOT / 'backend/sql'
+    migrations = sorted(migrations_root.glob('*.sql'))
+    if not migrations:
+        raise RuntimeError(f'Nenhuma migração SQL encontrada em {migrations_root}.')
+    _log(f'Aplicando {len(migrations)} migrações do NETDESK em ordem...')
+    for migration in migrations:
+        _apply_sql_file(migration)
+    _log('Esquema e migrações do banco NETDESK aplicados com sucesso.')
+
+
 def run_agent():
     if os.geteuid() != 0:
         raise SystemExit('O agente de instalação precisa executar como root.')
@@ -266,6 +302,9 @@ def run_agent():
         _log('Subindo PostgreSQL NETDESK...')
         _run(['docker', 'compose', '-f', str(compose), 'up', '-d'])
         _wait_postgres()
+
+        _set_status('migrations', running=True)
+        _apply_database_migrations()
 
         _set_status('netdesk', running=True)
         _log('Instalando backend e frontend NETDESK...')
