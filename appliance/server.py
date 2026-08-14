@@ -8,6 +8,7 @@ import socket
 import ssl
 import subprocess
 import time
+from datetime import date, timedelta
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +25,8 @@ SESSION_SECRET = ETC / "session-secret"
 ADMIN_PASSWORD = ETC / "admin-password.json"
 TLS_CERT = ETC / "tls.crt"
 TLS_KEY = ETC / "tls.key"
+INSTALLATION_ID = STATE / "installation-id"
+LICENSE_STATE = STATE / "license-state.json"
 SESSION_TTL = 8 * 60 * 60
 PBKDF2_ITERATIONS = 310000
 TLS_HANDSHAKE_TIMEOUT = 8
@@ -35,6 +38,74 @@ def read_text(path: Path, default=""):
         return path.read_text(encoding="utf-8").strip()
     except Exception:
         return default
+
+
+def write_private_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def installation_id():
+    current = read_text(INSTALLATION_ID)
+    if current:
+        return current
+    value = f"NDI-{secrets.token_hex(16).upper()}"
+    write_private_text(INSTALLATION_ID, value + "\n")
+    return value
+
+
+def default_license_state():
+    today = date.today()
+    ident = installation_id()
+    return {
+        "schema": "netdesk-appliance/license-state-v1",
+        "product": "NETDESK",
+        "installation_id": ident,
+        "customer": "",
+        "license_id": f"DEMO-{ident[-12:]}",
+        "status": "demo",
+        "issued_at": today.isoformat(),
+        "expires_at": (today + timedelta(days=30)).isoformat(),
+    }
+
+
+def license_state():
+    try:
+        data = json.loads(LICENSE_STATE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("installation_id"):
+            return data
+    except Exception:
+        pass
+    data = default_license_state()
+    write_private_text(LICENSE_STATE, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    return data
+
+
+def save_license_customer(customer: str):
+    data = license_state()
+    data["customer"] = customer.strip()
+    write_private_text(LICENSE_STATE, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    return data
+
+
+def license_request(customer=None):
+    data = license_state()
+    if customer is not None and customer.strip():
+        data = save_license_customer(customer)
+    customer_name = str(data.get("customer") or "").strip()
+    if not customer_name:
+        raise ValueError("Informe o nome da empresa antes de exportar a solicitação de licença.")
+    return {
+        "schema": "license-request-v1",
+        "product": "NETDESK",
+        "customer": customer_name,
+        "installation_id": data["installation_id"],
+        "current_license_id": data.get("license_id"),
+        "current_expires_at": data.get("expires_at"),
+    }
 
 
 def public_ip():
@@ -201,7 +272,7 @@ class SecureThreadingHTTPServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NETDESK-Appliance/0.3"
+    server_version = "NETDESK-Appliance/0.4"
 
     def log_message(self, fmt, *args):
         print(f"[appliance] {self.address_string()} {fmt % args}")
@@ -274,6 +345,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(401, {"error": "authentication_required"})
             return self.send_json(200, status_payload())
 
+        if path == "/api/license/status":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            return self.send_json(200, license_state())
+
         if path == "/api/preflight":
             if not self.authenticated():
                 return self.send_json(401, {"error": "authentication_required"})
@@ -308,6 +384,7 @@ class Handler(BaseHTTPRequestHandler):
                 INITIAL_CODE.unlink()
             except FileNotFoundError:
                 pass
+            license_state()
             return self.send_json(201, {"ok": True, "activated": True}, {"Set-Cookie": session_cookie()})
 
         if path == "/api/login":
@@ -322,6 +399,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/logout":
             return self.send_json(200, {"ok": True}, {"Set-Cookie": "netdesk_appliance_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
 
+        if path == "/api/license/request":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            data = self.body_json()
+            try:
+                payload = license_request(str(data.get("customer", "")))
+                return self.send_json(200, payload)
+            except ValueError as exc:
+                return self.send_json(400, {"error": "customer_required", "message": str(exc)})
+
         return self.send_json(404, {"error": "not_found"})
 
 
@@ -331,6 +418,10 @@ def main():
             raise SystemExit(f"Arquivo obrigatório ausente: {required}")
     if not password_configured() and not INITIAL_CODE.exists():
         raise SystemExit(f"Arquivo obrigatório ausente: {INITIAL_CODE}")
+
+    STATE.mkdir(parents=True, exist_ok=True)
+    installation_id()
+    license_state()
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(TLS_CERT), str(TLS_KEY))
