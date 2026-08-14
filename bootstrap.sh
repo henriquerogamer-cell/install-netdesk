@@ -30,6 +30,7 @@ ETC_ROOT="/etc/netdesk-appliance"
 STATE_ROOT="/var/lib/netdesk-appliance"
 PUBLIC_LICENSE_ROOT="/var/lib/netdesk-license"
 UNIT="/etc/systemd/system/netdesk-appliance.service"
+INSTALL_AGENT_UNIT="/etc/systemd/system/netdesk-install-agent.service"
 LICENSE_SYNC_UNIT="/etc/systemd/system/netdesk-license-sync.service"
 LICENSE_SYNC_PATH_UNIT="/etc/systemd/system/netdesk-license-sync.path"
 PORT="8443"
@@ -52,14 +53,17 @@ apt-get install -y --no-install-recommends ca-certificates curl openssl python3
 install -d -o root -g root -m 0755 "$APP_ROOT"
 install -d -o root -g root -m 0700 "$ETC_ROOT"
 install -d -o root -g root -m 0700 "$STATE_ROOT"
+install -d -o root -g root -m 0700 "$STATE_ROOT/install"
 install -d -o root -g root -m 0755 "$PUBLIC_LICENSE_ROOT"
 
 curl -fsSL "$REPO_RAW/appliance/server.py" -o "$APP_ROOT/server.py"
+curl -fsSL "$REPO_RAW/appliance/server_entry.py" -o "$APP_ROOT/server_entry.py"
 curl -fsSL "$REPO_RAW/appliance/index.html" -o "$APP_ROOT/index.html"
 curl -fsSL "$REPO_RAW/appliance/restore_engine.py" -o "$APP_ROOT/restore_engine.py"
+curl -fsSL "$REPO_RAW/appliance/installer_engine.py" -o "$APP_ROOT/installer_engine.py"
 curl -fsSL "$REPO_RAW/appliance/sync-license-state.sh" -o "$APP_ROOT/sync-license-state.sh"
-chmod 0755 "$APP_ROOT/server.py" "$APP_ROOT/sync-license-state.sh"
-chmod 0644 "$APP_ROOT/index.html" "$APP_ROOT/restore_engine.py"
+chmod 0755 "$APP_ROOT/server.py" "$APP_ROOT/server_entry.py" "$APP_ROOT/sync-license-state.sh"
+chmod 0644 "$APP_ROOT/index.html" "$APP_ROOT/restore_engine.py" "$APP_ROOT/installer_engine.py"
 
 printf '%s\n' "$INSTALL_MODE" > "$STATE_ROOT/install-mode"
 chmod 0600 "$STATE_ROOT/install-mode"
@@ -100,7 +104,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/netdesk-appliance
-ExecStart=/usr/bin/python3 /opt/netdesk-appliance/server.py
+ExecStart=/usr/bin/python3 /opt/netdesk-appliance/server_entry.py
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -113,6 +117,22 @@ ReadWritePaths=/etc/netdesk-appliance /opt/netdesk-appliance /var/lib/netdesk-ap
 WantedBy=multi-user.target
 EOF
 chmod 0644 "$UNIT"
+
+cat > "$INSTALL_AGENT_UNIT" <<'EOF'
+[Unit]
+Description=NETDESK Appliance Nova Instalação Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/netdesk-appliance
+ExecStart=/usr/bin/python3 /opt/netdesk-appliance/installer_engine.py --agent
+TimeoutStartSec=infinity
+EOF
+chmod 0644 "$INSTALL_AGENT_UNIT"
 
 cat > "$LICENSE_SYNC_UNIT" <<'EOF'
 [Unit]
