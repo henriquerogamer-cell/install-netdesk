@@ -26,6 +26,8 @@ TLS_CERT = ETC / "tls.crt"
 TLS_KEY = ETC / "tls.key"
 SESSION_TTL = 8 * 60 * 60
 PBKDF2_ITERATIONS = 310000
+TLS_HANDSHAKE_TIMEOUT = 8
+CLIENT_TIMEOUT = 30
 
 
 def read_text(path: Path, default=""):
@@ -170,8 +172,36 @@ def session_cookie():
     return f"netdesk_appliance_session={token}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Strict"
 
 
+class SecureThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, server_address, request_handler_class, ssl_context):
+        self.ssl_context = ssl_context
+        super().__init__(server_address, request_handler_class)
+
+    def process_request_thread(self, request, client_address):
+        tls_socket = None
+        try:
+            request.settimeout(TLS_HANDSHAKE_TIMEOUT)
+            tls_socket = self.ssl_context.wrap_socket(request, server_side=True)
+            tls_socket.settimeout(CLIENT_TIMEOUT)
+            self.finish_request(tls_socket, client_address)
+        except (ssl.SSLError, TimeoutError, socket.timeout, ConnectionError, OSError):
+            pass
+        except Exception:
+            self.handle_error(request, client_address)
+        finally:
+            try:
+                if tls_socket is not None:
+                    tls_socket.close()
+                else:
+                    request.close()
+            except Exception:
+                pass
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NETDESK-Appliance/0.2"
+    server_version = "NETDESK-Appliance/0.3"
 
     def log_message(self, fmt, *args):
         print(f"[appliance] {self.address_string()} {fmt % args}")
@@ -213,6 +243,12 @@ class Handler(BaseHTTPRequestHandler):
             return json.loads(raw.decode("utf-8")) if raw else {}
         except Exception:
             return {}
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
 
     def do_GET(self):
         path = urlparse(self.path).path
@@ -296,10 +332,9 @@ def main():
     if not password_configured() and not INITIAL_CODE.exists():
         raise SystemExit(f"Arquivo obrigatório ausente: {INITIAL_CODE}")
 
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(TLS_CERT), str(TLS_KEY))
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    server = SecureThreadingHTTPServer((HOST, PORT), Handler, context)
     print(f"[NETDESK Appliance] HTTPS ativo em 0.0.0.0:{PORT}")
     server.serve_forever()
 
