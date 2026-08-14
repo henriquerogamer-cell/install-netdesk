@@ -187,12 +187,33 @@ def _sql_literal(value):
 
 
 def _wait_postgres():
-    for _ in range(60):
-        result = subprocess.run(['docker', 'exec', 'netdesk-postgres', 'pg_isready', '-U', 'netdesk', '-d', 'netdesk'], capture_output=True)
+    # O entrypoint do Postgres inicia primeiro um servidor temporário apenas no
+    # socket Unix para importar /docker-entrypoint-initdb.d e depois o encerra.
+    # Testar via TCP evita confundir esse processo transitório com o servidor final.
+    consecutive_ready = 0
+    for _ in range(120):
+        result = subprocess.run([
+            'docker', 'exec', 'netdesk-postgres',
+            'pg_isready', '-h', '127.0.0.1',
+            '-U', 'netdesk', '-d', 'netdesk',
+        ], capture_output=True)
         if result.returncode == 0:
-            return
+            probe = subprocess.run([
+                'docker', 'exec', 'netdesk-postgres',
+                'psql', '-h', '127.0.0.1',
+                '-U', 'netdesk', '-d', 'netdesk',
+                '-tAc', 'SELECT 1',
+            ], capture_output=True, text=True)
+            if probe.returncode == 0 and probe.stdout.strip() == '1':
+                consecutive_ready += 1
+                if consecutive_ready >= 3:
+                    return
+            else:
+                consecutive_ready = 0
+        else:
+            consecutive_ready = 0
         time.sleep(1)
-    raise RuntimeError('PostgreSQL não ficou disponível dentro do tempo esperado.')
+    raise RuntimeError('PostgreSQL definitivo não ficou disponível dentro do tempo esperado.')
 
 
 def _apply_sql_file(path):
