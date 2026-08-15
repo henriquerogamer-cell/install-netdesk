@@ -14,6 +14,7 @@ STATE = Path("/var/lib/netdesk-appliance")
 RESTORE_ROOT = STATE / "restore"
 UPLOAD_DIR = RESTORE_ROOT / "uploads"
 PENDING_META = RESTORE_ROOT / "pending.json"
+RESTORE_LOG = RESTORE_ROOT / "restore.log"
 MAX_UPLOAD_BYTES = int(os.environ.get("NETDESK_RESTORE_MAX_UPLOAD_BYTES", str(20 * 1024**3)))
 MIN_FREE_AFTER_UPLOAD = int(os.environ.get("NETDESK_RESTORE_MIN_FREE_BYTES", str(512 * 1024**2)))
 MAX_MANIFEST_BYTES = 1024 * 1024
@@ -50,6 +51,23 @@ def _write_private_json(path: Path, value):
         except FileNotFoundError:
             pass
 
+
+
+def _restore_log(message):
+    _ensure_dirs()
+    stamp = time.strftime("%H:%M:%S")
+    with RESTORE_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(f"[{stamp}] {message}\n")
+    os.chmod(RESTORE_LOG, 0o600)
+
+
+def _log_tail(limit=160):
+    lines = []
+    try:
+        lines.extend(RESTORE_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:])
+    except Exception:
+        pass
+    return lines[-limit:]
 
 def _sha256(path: Path):
     digest = hashlib.sha256()
@@ -211,6 +229,7 @@ def pending_restore_status(include_missing=False):
         if not exists and not include_missing:
             return None
         data["file_available"] = exists
+        data["log_tail"] = _log_tail()
         execution_id = str(data.get("execution_id") or "")
         if execution_id.isdigit():
             state_path = JOB_DIR / f"{execution_id}.state.json"
@@ -256,6 +275,11 @@ def _managed_target_name(pending):
 
 
 def _update_netdesk_source(github_token):
+    try:
+        RESTORE_LOG.unlink()
+    except FileNotFoundError:
+        pass
+    _restore_log("Solicitação de restore confirmada pelo administrador.")
     token = str(github_token or "").strip()
     if len(token) < 20:
         raise RuntimeError("Token GitHub temporário inválido.")
@@ -308,9 +332,12 @@ def _execution_worker(github_token):
             if not Path("/etc/systemd/system/netdesk-restore-agent@.service").is_file():
                 raise RuntimeError("Agente privilegiado de restore não está instalado.")
 
+            _restore_log("Atualizando código privado do NETDESK...")
             _update_pending(stage="source_update", execution={"status": "preparing", "message": "Atualizando código privado do NETDESK."})
             _update_netdesk_source(github_token)
+            _restore_log("Código privado atualizado com sucesso.")
             github_token = ""
+            _restore_log("Criando backup de segurança da instalação atual...")
             _update_pending(stage="safety_backup", execution={"status": "preparing", "message": "Criando backup de segurança da instalação atual."})
             BACKUP_DIR.mkdir(parents=True, exist_ok=True)
             shutil.chown(BACKUP_DIR, user="netdesk", group="netdesk")
@@ -320,6 +347,7 @@ def _execution_worker(github_token):
             safety_path = Path(safety_line.split(":", 1)[1].strip()) if safety_line else None
             if not safety_path or not safety_path.is_file():
                 raise RuntimeError("Backup de segurança não retornou um arquivo válido.")
+            _restore_log(f"Backup de segurança concluído: {safety_path.name}")
 
             source = UPLOAD_DIR / Path(str(pending["stored_name"])).name
             target_name = _managed_target_name(pending)
@@ -328,6 +356,7 @@ def _execution_worker(github_token):
                 target_name = time.strftime("netdesk-%Y%m%d-%H%M%S.tar.gz")
                 target_path = BACKUP_DIR / target_name
             if not target_path.exists():
+                _restore_log(f"Copiando backup alvo para o motor gerenciado: {target_name}")
                 shutil.copy2(source, target_path)
             os.chmod(target_path, 0o600)
             shutil.chown(target_path, user="netdesk", group="netdesk")
@@ -359,6 +388,7 @@ def _execution_worker(github_token):
             })
             shutil.chown(job_path, user="netdesk", group="netdesk")
             shutil.chown(state_path, user="netdesk", group="netdesk")
+            _restore_log(f"Entregando restore {job_id} ao agente privilegiado...")
             _update_pending(
                 stage="execution_started",
                 execution_id=job_id,
@@ -367,7 +397,9 @@ def _execution_worker(github_token):
                 execution={"status": "queued", "message": "Restore entregue ao agente privilegiado."},
             )
             _command(["systemctl", "start", "--no-block", RESTORE_UNIT.format(job_id=job_id)], timeout=30)
+            _restore_log("Agente privilegiado iniciado. Aguardando validação, restore e health-check.")
         except Exception as exc:
+            _restore_log(f"ERRO: {exc}")
             _update_pending(stage="execution_failed", execution={"status": "failed", "message": str(exc)})
 
 
