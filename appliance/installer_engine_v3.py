@@ -8,9 +8,9 @@ import installer_engine_v2 as v2
 
 def prepare_linux_admin(password):
     v2.legacy._log('Preparando usuário Linux administrativo netdesk...')
-    subprocess.run(['apt-get', 'update', '-y'], check=True)
+    subprocess.run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'update', '-y'], check=True)
     subprocess.run([
-        'apt-get', 'install', '-y', '--no-install-recommends',
+        'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-install-recommends',
         'sudo', 'build-essential'
     ], check=True)
 
