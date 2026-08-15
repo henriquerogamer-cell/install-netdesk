@@ -4,7 +4,9 @@ import json
 import os
 import secrets
 import shutil
+import subprocess
 import tarfile
+import threading
 import time
 from pathlib import Path
 
@@ -15,6 +17,13 @@ PENDING_META = RESTORE_ROOT / "pending.json"
 MAX_UPLOAD_BYTES = int(os.environ.get("NETDESK_RESTORE_MAX_UPLOAD_BYTES", str(20 * 1024**3)))
 MIN_FREE_AFTER_UPLOAD = int(os.environ.get("NETDESK_RESTORE_MIN_FREE_BYTES", str(512 * 1024**2)))
 MAX_MANIFEST_BYTES = 1024 * 1024
+NETDESK_ROOT = Path("/opt/netdesk")
+BACKUP_DIR = NETDESK_ROOT / "backups"
+JOB_DIR = NETDESK_ROOT / "restore-jobs"
+BACKUP_SCRIPT = NETDESK_ROOT / "backend/scripts/backup-netdesk.js"
+RESTORE_UNIT = "netdesk-restore-agent@{job_id}.service"
+MANAGED_BACKUP_RE = __import__("re").compile(r"^netdesk-\d{8}-\d{6}\.tar\.gz$")
+_execution_lock = threading.Lock()
 
 
 def _ensure_dirs():
@@ -196,6 +205,116 @@ def pending_restore_status(include_missing=False):
     except Exception:
         return None
 
+
+
+def _update_pending(**patch):
+    current = pending_restore_status(include_missing=True) or {}
+    current.update(patch)
+    current["updated_at"] = int(time.time())
+    _write_private_json(PENDING_META, current)
+    return current
+
+
+def _command(args, cwd=None, timeout=3600):
+    result = subprocess.run(args, cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"Comando falhou ({result.returncode}): {' '.join(args)}{': ' + detail if detail else ''}")
+    return (result.stdout or "").strip()
+
+
+def _managed_target_name(pending):
+    original = Path(str(pending.get("filename") or "")).name
+    if MANAGED_BACKUP_RE.fullmatch(original):
+        return original
+    created = str((pending.get("manifest") or {}).get("created_at") or "")
+    digits = "".join(ch for ch in created if ch.isdigit())[:14]
+    if len(digits) == 14:
+        return f"netdesk-{digits[:8]}-{digits[8:]}.tar.gz"
+    return time.strftime("netdesk-%Y%m%d-%H%M%S.tar.gz")
+
+
+def _execution_worker():
+    with _execution_lock:
+        try:
+            pending = pending_restore_status(include_missing=True)
+            if not pending or not pending.get("file_available") or not pending.get("preflight", {}).get("apt"):
+                raise RuntimeError("Não existe backup aprovado e disponível para restauração.")
+            if not NETDESK_ROOT.is_dir() or not BACKUP_SCRIPT.is_file():
+                raise RuntimeError("Instalação NETDESK atual não foi encontrada.")
+            if not Path("/etc/systemd/system/netdesk-restore-agent@.service").is_file():
+                raise RuntimeError("Agente privilegiado de restore não está instalado.")
+
+            _update_pending(stage="safety_backup", execution={"status": "preparing", "message": "Criando backup de segurança da instalação atual."})
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            safety_output = _command(["runuser", "-u", "netdesk", "--", "/usr/bin/node", str(BACKUP_SCRIPT)], cwd=NETDESK_ROOT / "backend", timeout=7200)
+            safety_line = next((line for line in safety_output.splitlines() if line.startswith("Arquivo:")), "")
+            safety_path = Path(safety_line.split(":", 1)[1].strip()) if safety_line else None
+            if not safety_path or not safety_path.is_file():
+                raise RuntimeError("Backup de segurança não retornou um arquivo válido.")
+
+            source = UPLOAD_DIR / Path(str(pending["stored_name"])).name
+            target_name = _managed_target_name(pending)
+            target_path = BACKUP_DIR / target_name
+            if target_path.exists() and _sha256(target_path) != pending["sha256"]:
+                target_name = time.strftime("netdesk-%Y%m%d-%H%M%S.tar.gz")
+                target_path = BACKUP_DIR / target_name
+            if not target_path.exists():
+                shutil.copy2(source, target_path)
+            os.chmod(target_path, 0o600)
+            shutil.chown(target_path, user="netdesk", group="netdesk")
+            checksum_path = Path(str(target_path) + ".sha256")
+            checksum_path.write_text(f"{pending['sha256']}  {target_name}\n", encoding="utf-8")
+            os.chmod(checksum_path, 0o600)
+            shutil.chown(checksum_path, user="netdesk", group="netdesk")
+
+            job_id = str(int(time.time() * 1000))
+            JOB_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+            job = {
+                "restore_id": int(job_id),
+                "requested_by": "netdesk-appliance",
+                "requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "target_backup_id": 0,
+                "pre_restore_backup_id": 0,
+                "target_archive_name": target_name,
+                "pre_restore_archive_name": safety_path.name,
+                "target_manifest": pending.get("manifest"),
+            }
+            job_path = JOB_DIR / f"{job_id}.json"
+            state_path = JOB_DIR / f"{job_id}.state.json"
+            _write_private_json(job_path, job)
+            _write_private_json(state_path, {
+                "restore_id": int(job_id),
+                "status": "queued",
+                "production_touched": False,
+                "created_at": job["requested_at"],
+            })
+            shutil.chown(job_path, user="netdesk", group="netdesk")
+            shutil.chown(state_path, user="netdesk", group="netdesk")
+            _update_pending(
+                stage="execution_started",
+                execution_id=job_id,
+                safety_backup=safety_path.name,
+                target_archive=target_name,
+                execution={"status": "queued", "message": "Restore entregue ao agente privilegiado."},
+            )
+            _command(["systemctl", "start", "--no-block", RESTORE_UNIT.format(job_id=job_id)], timeout=30)
+        except Exception as exc:
+            _update_pending(stage="execution_failed", execution={"status": "failed", "message": str(exc)})
+
+
+def start_pending_restore():
+    pending = pending_restore_status(include_missing=True)
+    if not pending or not pending.get("file_available"):
+        raise ValueError("Envie e valide um backup antes de iniciar a restauração.")
+    if not pending.get("preflight", {}).get("apt"):
+        raise ValueError("O backup não foi aprovado no preflight.")
+    current = pending.get("execution") or {}
+    if current.get("status") in {"preparing", "queued", "validating", "maintenance", "restoring", "starting", "rollback"}:
+        raise ValueError("Já existe uma restauração em andamento.")
+    thread = threading.Thread(target=_execution_worker, name="netdesk-appliance-restore", daemon=True)
+    thread.start()
+    return _update_pending(stage="queued", execution={"status": "preparing", "message": "Preparando restauração e backup de segurança."})
 
 def save_restore_upload(stream, content_length: int, original_name: str):
     _ensure_dirs()
