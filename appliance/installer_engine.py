@@ -360,14 +360,14 @@ SET company_name = EXCLUDED.company_name,
         _run(['systemctl', 'daemon-reload'])
         _run(['systemctl', 'enable', '--now', 'netdesk-backend'])
 
-        _log('Criando proprietário inicial master_admin...')
+        _log('Criando proprietário inicial system_owner...')
         hash_cmd = "const b=require('/opt/netdesk/backend/node_modules/bcryptjs'); b.hash(process.argv[1],12).then(x=>process.stdout.write(x))"
         password_hash = subprocess.check_output(['node', '-e', hash_cmd, owner_password], text=True).strip()
         sql = f"""
-INSERT INTO roles (name, description) VALUES ('master_admin','Proprietário máximo do sistema') ON CONFLICT (name) DO NOTHING;
+INSERT INTO roles (name, description) VALUES ('system_owner','Proprietário da instalação') ON CONFLICT (name) DO NOTHING;
 INSERT INTO users (role_id,name,email,username,password_hash,is_active)
 SELECT id,{_sql_literal(owner_username)},{_sql_literal(owner_email)},{_sql_literal(owner_username)},{_sql_literal(password_hash)},true
-FROM roles WHERE name='master_admin'
+FROM roles WHERE name='system_owner'
 ON CONFLICT (username) DO NOTHING;
 """
         _run(['docker', 'exec', 'netdesk-postgres', 'psql', '-U', 'netdesk', '-d', 'netdesk', '-v', 'ON_ERROR_STOP=1', '-c', sql], secret_values=[password_hash])
