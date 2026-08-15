@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from restore_engine import clear_pending_restore, pending_restore_status, save_restore_upload
+from restore_engine import clear_pending_restore, pending_restore_status, save_restore_upload, start_pending_restore
 
 HOST = "0.0.0.0"
 PORT = 8443
@@ -644,6 +644,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 print(f"[restore] upload/preflight failed: {exc}")
                 return self.send_json(500, {"error": "restore_upload_failed", "message": "Não foi possível receber ou validar o backup."})
+
+        if path == "/api/restore/execute":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            if not operational_license():
+                return self.send_json(423, {"error": "license_inactive", "message": "Ative ou renove a licença antes de restaurar."})
+            if str(self.body_json().get("confirmation") or "").strip().upper() != "RESTAURAR":
+                return self.send_json(400, {"error": "restore_confirmation_required", "message": "Digite RESTAURAR para confirmar."})
+            try:
+                return self.send_json(202, {"ok": True, "restore": start_pending_restore()})
+            except ValueError as exc:
+                return self.send_json(400, {"error": "restore_not_started", "message": str(exc)})
+            except Exception as exc:
+                print(f"[restore] execution start failed: {exc}")
+                return self.send_json(500, {"error": "restore_start_failed", "message": "Não foi possível iniciar a restauração."})
 
         if path == "/api/restore/clear":
             if not self.authenticated():
