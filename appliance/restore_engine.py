@@ -245,7 +245,46 @@ def _managed_target_name(pending):
     return time.strftime("netdesk-%Y%m%d-%H%M%S.tar.gz")
 
 
-def _execution_worker():
+def _update_netdesk_source(github_token):
+    token = str(github_token or "").strip()
+    if len(token) < 20:
+        raise RuntimeError("Token GitHub temporário inválido.")
+    askpass = RESTORE_ROOT / f"askpass-{secrets.token_hex(6)}.sh"
+    askpass.write_text(
+        '#!/usr/bin/env bash\n'
+        'case "$1" in\n'
+        '  *Username*) printf "%s\\n" "x-access-token" ;;\n'
+        '  *) printf "%s\\n" "$NETDESK_GITHUB_TOKEN" ;;\n'
+        'esac\n',
+        encoding="utf-8",
+    )
+    os.chmod(askpass, 0o700)
+    shutil.chown(askpass, user="netdesk", group="netdesk")
+    env = os.environ.copy()
+    env.update({
+        "GIT_ASKPASS": str(askpass),
+        "GIT_TERMINAL_PROMPT": "0",
+        "NETDESK_GITHUB_TOKEN": token,
+    })
+    try:
+        result = subprocess.run(
+            ["runuser", "-u", "netdesk", "--", "git", "-C", str(NETDESK_ROOT),
+             "pull", "--ff-only", "origin", "agent/campaign-execution-history"],
+            capture_output=True, text=True, timeout=600, check=False, env=env,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"Não foi possível atualizar o código privado do NETDESK: {detail}")
+    finally:
+        try:
+            askpass.unlink()
+        except FileNotFoundError:
+            pass
+        env["NETDESK_GITHUB_TOKEN"] = ""
+        token = ""
+
+
+def _execution_worker(github_token):
     with _execution_lock:
         try:
             pending = pending_restore_status(include_missing=True)
@@ -256,6 +295,9 @@ def _execution_worker():
             if not Path("/etc/systemd/system/netdesk-restore-agent@.service").is_file():
                 raise RuntimeError("Agente privilegiado de restore não está instalado.")
 
+            _update_pending(stage="source_update", execution={"status": "preparing", "message": "Atualizando código privado do NETDESK."})
+            _update_netdesk_source(github_token)
+            github_token = ""
             _update_pending(stage="safety_backup", execution={"status": "preparing", "message": "Criando backup de segurança da instalação atual."})
             BACKUP_DIR.mkdir(parents=True, exist_ok=True)
             shutil.chown(BACKUP_DIR, user="netdesk", group="netdesk")
@@ -316,7 +358,7 @@ def _execution_worker():
             _update_pending(stage="execution_failed", execution={"status": "failed", "message": str(exc)})
 
 
-def start_pending_restore():
+def start_pending_restore(github_token):
     pending = pending_restore_status(include_missing=True)
     if not pending or not pending.get("file_available"):
         raise ValueError("Envie e valide um backup antes de iniciar a restauração.")
@@ -325,7 +367,10 @@ def start_pending_restore():
     current = pending.get("execution") or {}
     if current.get("status") in {"preparing", "queued", "validating", "maintenance", "restoring", "starting", "rollback"}:
         raise ValueError("Já existe uma restauração em andamento.")
-    thread = threading.Thread(target=_execution_worker, name="netdesk-appliance-restore", daemon=True)
+    token = str(github_token or "").strip()
+    if len(token) < 20:
+        raise ValueError("Informe o token GitHub temporário para atualizar o código privado.")
+    thread = threading.Thread(target=_execution_worker, args=(token,), name="netdesk-appliance-restore", daemon=True)
     thread.start()
     return _update_pending(stage="queued", execution={"status": "preparing", "message": "Preparando restauração e backup de segurança."})
 
