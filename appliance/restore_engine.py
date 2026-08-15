@@ -239,6 +239,13 @@ def pending_restore_status(include_missing=False):
                 status = str(state.get("status") or "")
                 if status in {"success", "rolled_back", "rollback_failed", "failed_before_changes"}:
                     data["stage"] = status
+                journal = subprocess.run(
+                    ["journalctl", "-u", RESTORE_UNIT.format(job_id=execution_id),
+                     "--no-pager", "-n", "120", "-o", "cat"],
+                    capture_output=True, text=True, timeout=5, check=False,
+                )
+                journal_lines = (journal.stdout or "").splitlines()
+                data["log_tail"] = (_log_tail(80) + journal_lines)[-180:]
             except Exception:
                 pass
         return data
