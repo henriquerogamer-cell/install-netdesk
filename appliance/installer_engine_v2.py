@@ -112,8 +112,8 @@ def queue_install(payload):
 
 def _prepare_linux_admin(password):
     legacy._log('Preparando usuário Linux administrativo netdesk...')
-    subprocess.run(['apt-get', 'update', '-y'], check=True)
-    subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends', 'sudo'], check=True)
+    subprocess.run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'update', '-y'], check=True)
+    subprocess.run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-install-recommends', 'sudo'], check=True)
 
     if subprocess.run(['id', 'netdesk'], capture_output=True).returncode != 0:
         subprocess.run([
@@ -182,7 +182,7 @@ def _configure_domains(netdesk_domain, chat_domain, owner_email):
         return {'ssl': False, 'dns_ok': False, 'public_ip': public_ip, 'netdesk_ips': nd_ips, 'chat_ips': chat_ips}
 
     legacy._log('DNS validado. Emitindo HTTPS com Certbot...')
-    legacy._run(['apt-get', 'install', '-y', '--no-install-recommends', 'certbot', 'python3-certbot-nginx'])
+    legacy._run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-install-recommends', 'certbot', 'python3-certbot-nginx'])
     email = owner_email if owner_email and '@' in owner_email else 'admin@localhost.invalid'
     args = ['certbot', '--nginx', '--non-interactive', '--agree-tos', '--redirect', '-d', netdesk_domain, '-d', chat_domain]
     if email.endswith('.invalid'):
