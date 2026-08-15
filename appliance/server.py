@@ -650,10 +650,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(401, {"error": "authentication_required"})
             if not operational_license():
                 return self.send_json(423, {"error": "license_inactive", "message": "Ative ou renove a licença antes de restaurar."})
-            if str(self.body_json().get("confirmation") or "").strip().upper() != "RESTAURAR":
+            payload = self.body_json()
+            if str(payload.get("confirmation") or "").strip().upper() != "RESTAURAR":
                 return self.send_json(400, {"error": "restore_confirmation_required", "message": "Digite RESTAURAR para confirmar."})
             try:
-                return self.send_json(202, {"ok": True, "restore": start_pending_restore()})
+                return self.send_json(202, {"ok": True, "restore": start_pending_restore(payload.get("github_token"))})
             except ValueError as exc:
                 return self.send_json(400, {"error": "restore_not_started", "message": str(exc)})
             except Exception as exc:
