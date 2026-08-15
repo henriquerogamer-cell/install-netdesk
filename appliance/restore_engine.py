@@ -201,6 +201,17 @@ def pending_restore_status(include_missing=False):
         if not exists and not include_missing:
             return None
         data["file_available"] = exists
+        execution_id = str(data.get("execution_id") or "")
+        if execution_id.isdigit():
+            state_path = JOB_DIR / f"{execution_id}.state.json"
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                data["execution"] = state
+                status = str(state.get("status") or "")
+                if status in {"success", "rolled_back", "rollback_failed", "failed_before_changes"}:
+                    data["stage"] = status
+            except Exception:
+                pass
         return data
     except Exception:
         return None
