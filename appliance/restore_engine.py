@@ -35,10 +35,20 @@ def _ensure_dirs():
 
 def _write_private_json(path: Path, value):
     _ensure_dirs()
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    # Cada thread usa um temporário exclusivo. Upload, fila e agente podem
+    # atualizar o mesmo estado quase simultaneamente.
+    tmp = path.with_name(
+        f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp"
+    )
+    try:
+        tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _sha256(path: Path):
