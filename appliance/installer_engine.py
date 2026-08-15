@@ -336,6 +336,20 @@ def run_agent():
         _set_status('migrations', running=True)
         _apply_database_migrations()
 
+        _log(f'Configurando identidade inicial da empresa: {company}')
+        company_sql = f"""
+INSERT INTO company_settings (id, company_name, created_at, updated_at)
+VALUES (1, {_sql_literal(company)}, NOW(), NOW())
+ON CONFLICT (id) DO UPDATE
+SET company_name = EXCLUDED.company_name,
+    updated_at = NOW();
+"""
+        _run([
+            'docker', 'exec', 'netdesk-postgres',
+            'psql', '-U', 'netdesk', '-d', 'netdesk',
+            '-v', 'ON_ERROR_STOP=1', '-c', company_sql,
+        ])
+
         _set_status('netdesk', running=True)
         _log('Instalando backend e frontend NETDESK...')
         _run(['runuser', '-u', 'netdesk', '--', 'bash', '-lc', 'cd /opt/netdesk/backend && npm ci --omit=dev'])
