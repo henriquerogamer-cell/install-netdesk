@@ -259,7 +259,10 @@ def _update_netdesk_source(github_token):
     token = str(github_token or "").strip()
     if len(token) < 20:
         raise RuntimeError("Token GitHub temporário inválido.")
-    askpass = RESTORE_ROOT / f"askpass-{secrets.token_hex(6)}.sh"
+    # O processo Git roda como netdesk; /var/lib/netdesk-appliance é 0700/root.
+    # Use /tmp (privado pelo systemd da appliance) para que o filho consiga
+    # atravessar o diretório e executar o helper sem expor o token em argumentos.
+    askpass = Path("/tmp") / f"netdesk-restore-askpass-{secrets.token_hex(6)}.sh"
     askpass.write_text(
         '#!/usr/bin/env bash\n'
         'case "$1" in\n'
