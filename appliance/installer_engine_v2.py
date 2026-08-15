@@ -184,7 +184,7 @@ def _configure_domains(netdesk_domain, chat_domain, owner_email):
     legacy._log('DNS validado. Emitindo HTTPS com Certbot...')
     legacy._run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-install-recommends', 'certbot', 'python3-certbot-nginx'])
     email = owner_email if owner_email and '@' in owner_email else 'admin@localhost.invalid'
-    args = ['certbot', '--nginx', '--non-interactive', '--agree-tos', '--redirect', '-d', netdesk_domain, '-d', chat_domain]
+    args = ['certbot', '--nginx', '--non-interactive', '--agree-tos', '--redirect', '--keep-until-expiring', '-d', netdesk_domain, '-d', chat_domain]
     if email.endswith('.invalid'):
         args.append('--register-unsafely-without-email')
     else:
@@ -238,9 +238,17 @@ def run_agent():
             legacy._log(f'Instalação concluída com SSL pendente. Domínios configurados: {netdesk_domain} e {chat_domain}.')
         return 0
     except Exception as exc:
-        legacy._log(f'ERRO ao configurar domínios/SSL: {exc}')
-        legacy._set_status('failed', running=False, success=False, error=str(exc), finished_at=int(time.time()))
-        return 1
+        # DNS, Certbot e limites da autoridade certificadora não invalidam a
+        # instalação local já concluída. Mantém HTTP funcional e sinaliza que
+        # somente a emissão/ativação do HTTPS ficou pendente.
+        legacy._log(f'AVISO ao configurar domínios/SSL: {exc}')
+        legacy._log('Instalação principal concluída; HTTPS ficou pendente e pode ser ativado depois sem reinstalar.')
+        legacy._set_status(
+            'completed', running=False, success=True, finished_at=int(time.time()),
+            netdesk_domain=netdesk_domain, chat_domain=chat_domain,
+            ssl_enabled=False, ssl_pending=True, ssl_error=str(exc),
+        )
+        return 0
     finally:
         linux_password = ''
 
