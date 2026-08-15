@@ -47,8 +47,8 @@ fi
 
 echo "[NETDESK Appliance] Preparando Ubuntu 24.04..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y --no-install-recommends ca-certificates curl openssl python3
+apt-get -o DPkg::Lock::Timeout=300 update -y
+apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends ca-certificates curl openssl python3
 
 install -d -o root -g root -m 0755 "$APP_ROOT"
 install -d -o root -g root -m 0700 "$ETC_ROOT"
