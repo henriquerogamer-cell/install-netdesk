@@ -289,8 +289,8 @@ def run_agent():
 
         _set_status('dependencies', running=True)
         _log('Instalando dependências base do Ubuntu...')
-        _run(['apt-get', 'update', '-y'])
-        _run(['apt-get', 'install', '-y', '--no-install-recommends', 'git', 'nginx', 'docker.io', 'docker-compose-v2', 'curl', 'ca-certificates', 'openssl'])
+        _run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'update', '-y'])
+        _run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-install-recommends', 'git', 'nginx', 'docker.io', 'docker-compose-v2', 'curl', 'ca-certificates', 'openssl'])
         _run(['systemctl', 'enable', '--now', 'docker'])
 
         node_ok = False
@@ -302,7 +302,7 @@ def run_agent():
         if not node_ok:
             _log('Node.js 20+ não encontrado. Instalando Node.js 22 LTS via NodeSource...')
             _run(['bash', '-lc', 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -'])
-            _run(['apt-get', 'install', '-y', 'nodejs'])
+            _run(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', 'nodejs'])
 
         if subprocess.run(['id', 'netdesk'], capture_output=True).returncode != 0:
             _run(['useradd', '--system', '--create-home', '--home-dir', '/home/netdesk', '--shell', '/bin/bash', 'netdesk'])
