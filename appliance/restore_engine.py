@@ -258,6 +258,8 @@ def _execution_worker():
 
             _update_pending(stage="safety_backup", execution={"status": "preparing", "message": "Criando backup de segurança da instalação atual."})
             BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.chown(BACKUP_DIR, user="netdesk", group="netdesk")
+            os.chmod(BACKUP_DIR, 0o700)
             safety_output = _command(["runuser", "-u", "netdesk", "--", "/usr/bin/node", str(BACKUP_SCRIPT)], cwd=NETDESK_ROOT / "backend", timeout=7200)
             safety_line = next((line for line in safety_output.splitlines() if line.startswith("Arquivo:")), "")
             safety_path = Path(safety_line.split(":", 1)[1].strip()) if safety_line else None
