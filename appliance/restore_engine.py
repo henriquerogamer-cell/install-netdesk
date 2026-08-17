@@ -325,7 +325,7 @@ def _update_netdesk_source(github_token):
         RESTORE_LOG.unlink()
     except FileNotFoundError:
         pass
-    _restore_log("Solicitação de restore confirmada pelo administrador.")
+    _restore_log("Atualização do código NETDESK confirmada pelo administrador.")
     token = str(github_token or "").strip()
     if len(token) < 20:
         raise RuntimeError("Token GitHub temporário inválido.")
@@ -351,8 +351,12 @@ def _update_netdesk_source(github_token):
     })
     try:
         result = subprocess.run(
-            ["runuser", "-u", "netdesk", "--", "git", "-C", str(NETDESK_ROOT),
-             "pull", "--ff-only", "origin", "agent/campaign-execution-history"],
+            [
+                "runuser", "-u", "netdesk", "--", "git",
+                "-c", "url.https://github.com/.insteadOf=git@github.com:",
+                "-C", str(NETDESK_ROOT),
+                "pull", "--ff-only", "origin", "agent/campaign-execution-history",
+            ],
             capture_output=True, text=True, timeout=600, check=False, env=env,
         )
         if result.returncode != 0:
