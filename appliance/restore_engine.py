@@ -19,6 +19,7 @@ MAX_UPLOAD_BYTES = int(os.environ.get("NETDESK_RESTORE_MAX_UPLOAD_BYTES", str(20
 MIN_FREE_AFTER_UPLOAD = int(os.environ.get("NETDESK_RESTORE_MIN_FREE_BYTES", str(512 * 1024**2)))
 MAX_MANIFEST_BYTES = 1024 * 1024
 NETDESK_ROOT = Path("/opt/netdesk")
+CHAT_ROOT = Path("/opt/chat")
 BACKUP_DIR = NETDESK_ROOT / "backups"
 JOB_DIR = NETDESK_ROOT / "restore-jobs"
 BACKUP_SCRIPT = NETDESK_ROOT / "backend/scripts/backup-netdesk.js"
@@ -366,6 +367,47 @@ def _update_netdesk_source(github_token):
         token = ""
 
 
+
+def _update_chat_source(github_token):
+    token = str(github_token or "").strip()
+    if len(token) < 20:
+        raise RuntimeError("Token GitHub temporário inválido.")
+    if not CHAT_ROOT.is_dir():
+        raise RuntimeError("Instalação CHAT atual não foi encontrada.")
+    askpass = Path("/tmp") / f"netdesk-chat-update-askpass-{secrets.token_hex(6)}.sh"
+    askpass.write_text(
+        '#!/usr/bin/env bash\n'
+        'case "$1" in\n'
+        '  *Username*) printf "%s\\n" "x-access-token" ;;\n'
+        '  *) printf "%s\\n" "$NETDESK_GITHUB_TOKEN" ;;\n'
+        'esac\n',
+        encoding="utf-8",
+    )
+    os.chmod(askpass, 0o700)
+    shutil.chown(askpass, user="netdesk", group="netdesk")
+    env = os.environ.copy()
+    env.update({
+        "GIT_ASKPASS": str(askpass),
+        "GIT_TERMINAL_PROMPT": "0",
+        "NETDESK_GITHUB_TOKEN": token,
+    })
+    try:
+        result = subprocess.run(
+            ["runuser", "-u", "netdesk", "--", "git", "-C", str(CHAT_ROOT),
+             "pull", "--ff-only", "origin", "main"],
+            capture_output=True, text=True, timeout=600, check=False, env=env,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"Não foi possível atualizar o código privado do CHAT: {detail}")
+    finally:
+        try:
+            askpass.unlink()
+        except FileNotFoundError:
+            pass
+        env["NETDESK_GITHUB_TOKEN"] = ""
+        token = ""
+
 def _execution_worker(github_token):
     with _execution_lock:
         try:
@@ -456,10 +498,16 @@ def update_netdesk_application(github_token):
     if not NETDESK_ROOT.is_dir():
         raise ValueError("Instalação NETDESK atual não foi encontrada.")
     _update_netdesk_source(token)
-    _restore_log("Gerando frontend atualizado...")
+    _update_chat_source(token)
+    _restore_log("Gerando frontends atualizados...")
     _command(
         ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
         cwd=NETDESK_ROOT / "frontend",
+        timeout=1800,
+    )
+    _command(
+        ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
+        cwd=CHAT_ROOT,
         timeout=1800,
     )
     _restore_log("Reiniciando backend...")
@@ -470,7 +518,7 @@ def update_netdesk_application(github_token):
             capture_output=True, text=True, check=False,
         )
         if health.returncode == 0:
-            _restore_log("NETDESK atualizado e validado com sucesso.")
+            _restore_log("NETDESK e CHAT atualizados e validados com sucesso.")
             return {"ok": True, "message": "NETDESK atualizado e validado com sucesso."}
         time.sleep(1)
     raise RuntimeError("O código foi atualizado, mas o health-check do backend falhou.")
