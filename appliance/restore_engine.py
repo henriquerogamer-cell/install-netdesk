@@ -448,6 +448,33 @@ def _execution_worker(github_token):
             _update_pending(stage="execution_failed", execution={"status": "failed", "message": str(exc)})
 
 
+
+def update_netdesk_application(github_token):
+    token = str(github_token or "").strip()
+    if len(token) < 20:
+        raise ValueError("Informe o token GitHub temporário para atualizar o NETDESK.")
+    if not NETDESK_ROOT.is_dir():
+        raise ValueError("Instalação NETDESK atual não foi encontrada.")
+    _update_netdesk_source(token)
+    _restore_log("Gerando frontend atualizado...")
+    _command(
+        ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
+        cwd=NETDESK_ROOT / "frontend",
+        timeout=1800,
+    )
+    _restore_log("Reiniciando backend...")
+    _command(["systemctl", "restart", "netdesk-backend"], timeout=60)
+    for _ in range(30):
+        health = subprocess.run(
+            ["curl", "-fsS", "--max-time", "3", "http://127.0.0.1:3333/health"],
+            capture_output=True, text=True, check=False,
+        )
+        if health.returncode == 0:
+            _restore_log("NETDESK atualizado e validado com sucesso.")
+            return {"ok": True, "message": "NETDESK atualizado e validado com sucesso."}
+        time.sleep(1)
+    raise RuntimeError("O código foi atualizado, mas o health-check do backend falhou.")
+
 def start_pending_restore(github_token):
     pending = pending_restore_status(include_missing=True)
     if not pending or not pending.get("file_available"):
