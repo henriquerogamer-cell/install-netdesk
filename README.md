@@ -23,7 +23,7 @@ Para concluir uma instalação NETDESK completa também serão necessários dois
 Em uma VM Ubuntu Server 24.04 limpa:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/henriquerogamer-cell/install-netdesk/main/bootstrap.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/henriquerogamer-cell/install-netdesk/main/bootstrap.sh?v=$(date +%s%N)" | sudo bash
 ```
 
 Ao terminar, o instalador mostra o endereço HTTPS da appliance e o código inicial de acesso.
