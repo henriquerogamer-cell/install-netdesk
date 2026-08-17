@@ -235,8 +235,29 @@ def pending_restore_status(include_missing=False):
             state_path = JOB_DIR / f"{execution_id}.state.json"
             try:
                 state = json.loads(state_path.read_text(encoding="utf-8"))
-                data["execution"] = state
                 status = str(state.get("status") or "")
+                running_statuses = {"queued", "validating", "maintenance", "restoring", "starting", "rollback"}
+                if status in running_statuses:
+                    unit_status = subprocess.run(
+                        ["systemctl", "show", RESTORE_UNIT.format(job_id=execution_id),
+                         "--property=ActiveState", "--property=Result", "--no-pager"],
+                        capture_output=True, text=True, timeout=5, check=False,
+                    )
+                    properties = {}
+                    for line in (unit_status.stdout or "").splitlines():
+                        key, separator, value = line.partition("=")
+                        if separator:
+                            properties[key] = value
+                    failed_result = properties.get("Result") not in {"", "success"}
+                    if properties.get("ActiveState") == "failed" or failed_result:
+                        state = {
+                            **state,
+                            "status": "failed_before_changes" if not state.get("production_touched") else "failed",
+                            "message": "O agente de restore terminou com falha.",
+                            "error_message": "Consulte o Terminal do restore para ver a causa. É possível tentar novamente.",
+                        }
+                        status = state["status"]
+                data["execution"] = state
                 if status in {"success", "rolled_back", "rollback_failed", "failed_before_changes"}:
                     data["stage"] = status
                 journal = subprocess.run(
