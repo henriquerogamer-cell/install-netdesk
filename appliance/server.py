@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from restore_engine import clear_pending_restore, pending_restore_status, save_restore_upload, start_pending_restore
+from restore_engine import clear_pending_restore, pending_restore_status, save_restore_upload, start_pending_restore, update_netdesk_application
 
 HOST = "0.0.0.0"
 PORT = 8443
@@ -660,6 +660,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 print(f"[restore] execution start failed: {exc}")
                 return self.send_json(500, {"error": "restore_start_failed", "message": "Não foi possível iniciar a restauração."})
+
+        if path == "/api/netdesk/update":
+            if not self.authenticated():
+                return self.send_json(401, {"error": "authentication_required"})
+            if not operational_license():
+                return self.send_json(423, {"error": "license_inactive", "message": "Ative ou renove a licença antes de atualizar."})
+            payload = self.body_json()
+            try:
+                return self.send_json(200, update_netdesk_application(payload.get("github_token")))
+            except ValueError as exc:
+                return self.send_json(400, {"error": "netdesk_update_invalid", "message": str(exc)})
+            except Exception as exc:
+                print(f"[update] NETDESK update failed: {exc}")
+                return self.send_json(500, {"error": "netdesk_update_failed", "message": str(exc)})
 
         if path == "/api/restore/clear":
             if not self.authenticated():
