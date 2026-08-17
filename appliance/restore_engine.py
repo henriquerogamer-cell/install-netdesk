@@ -397,8 +397,12 @@ def _update_chat_source(github_token):
     })
     try:
         result = subprocess.run(
-            ["runuser", "-u", "netdesk", "--", "git", "-C", str(CHAT_ROOT),
-             "pull", "--ff-only", "origin", "main"],
+            [
+                "runuser", "-u", "netdesk", "--", "git",
+                "-c", "url.https://github.com/.insteadOf=git@github.com:",
+                "-C", str(CHAT_ROOT),
+                "pull", "--ff-only", "origin", "main",
+            ],
             capture_output=True, text=True, timeout=600, check=False, env=env,
         )
         if result.returncode != 0:
@@ -501,31 +505,38 @@ def update_netdesk_application(github_token):
         raise ValueError("Informe o token GitHub temporário para atualizar o NETDESK.")
     if not NETDESK_ROOT.is_dir():
         raise ValueError("Instalação NETDESK atual não foi encontrada.")
-    _update_netdesk_source(token)
-    _update_chat_source(token)
-    _restore_log("Gerando frontends atualizados...")
-    _command(
-        ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
-        cwd=NETDESK_ROOT / "frontend",
-        timeout=1800,
-    )
-    _command(
-        ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
-        cwd=CHAT_ROOT,
-        timeout=1800,
-    )
-    _restore_log("Reiniciando backend...")
-    _command(["systemctl", "restart", "netdesk-backend"], timeout=60)
-    for _ in range(30):
-        health = subprocess.run(
-            ["curl", "-fsS", "--max-time", "3", "http://127.0.0.1:3333/health"],
-            capture_output=True, text=True, check=False,
+    try:
+        _restore_log("Atualizando repositório NETDESK...")
+        _update_netdesk_source(token)
+        _restore_log("Atualizando repositório CHAT...")
+        _update_chat_source(token)
+        _restore_log("Gerando frontend do NETDESK...")
+        _command(
+            ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
+            cwd=NETDESK_ROOT / "frontend",
+            timeout=1800,
         )
-        if health.returncode == 0:
-            _restore_log("NETDESK e CHAT atualizados e validados com sucesso.")
-            return {"ok": True, "message": "NETDESK atualizado e validado com sucesso."}
-        time.sleep(1)
-    raise RuntimeError("O código foi atualizado, mas o health-check do backend falhou.")
+        _restore_log("Gerando frontend do CHAT...")
+        _command(
+            ["runuser", "-u", "netdesk", "--", "/usr/bin/npm", "run", "build"],
+            cwd=CHAT_ROOT,
+            timeout=1800,
+        )
+        _restore_log("Reiniciando backend...")
+        _command(["systemctl", "restart", "netdesk-backend"], timeout=60)
+        for _ in range(30):
+            health = subprocess.run(
+                ["curl", "-fsS", "--max-time", "3", "http://127.0.0.1:3333/health"],
+                capture_output=True, text=True, check=False,
+            )
+            if health.returncode == 0:
+                _restore_log("NETDESK e CHAT atualizados e validados com sucesso.")
+                return {"ok": True, "message": "NETDESK e CHAT atualizados e validados com sucesso."}
+            time.sleep(1)
+        raise RuntimeError("O código foi atualizado, mas o health-check do backend falhou.")
+    except Exception as exc:
+        _restore_log(f"ERRO na atualização: {exc}")
+        raise
 
 def start_pending_restore(github_token):
     pending = pending_restore_status(include_missing=True)
