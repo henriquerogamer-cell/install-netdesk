@@ -28,6 +28,24 @@ MANAGED_BACKUP_RE = __import__("re").compile(r"^netdesk-\d{8}-\d{6}\.tar\.gz$")
 _execution_lock = threading.Lock()
 
 
+def _netdesk_backend_port():
+    env_path = NETDESK_ROOT / "backend" / ".env"
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip() != "PORT":
+                continue
+            port = int(value.strip().strip('"').strip("'"))
+            if 1 <= port <= 65535:
+                return port
+    except (OSError, ValueError):
+        pass
+    return 3333
+
+
 def _ensure_dirs():
     RESTORE_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -506,6 +524,8 @@ def update_netdesk_application(github_token):
     if not NETDESK_ROOT.is_dir():
         raise ValueError("Instalação NETDESK atual não foi encontrada.")
     try:
+        backend_port = _netdesk_backend_port()
+        _restore_log(f"Health-check configurado para a porta {backend_port}.")
         _restore_log("Atualizando repositório NETDESK...")
         _update_netdesk_source(token)
         _restore_log("Atualizando repositório CHAT...")
@@ -526,7 +546,7 @@ def update_netdesk_application(github_token):
         _command(["systemctl", "restart", "netdesk-backend"], timeout=60)
         for _ in range(30):
             health = subprocess.run(
-                ["curl", "-fsS", "--max-time", "3", "http://127.0.0.1:3333/health"],
+                ["curl", "-fsS", "--max-time", "3", f"http://127.0.0.1:{backend_port}/health"],
                 capture_output=True, text=True, check=False,
             )
             if health.returncode == 0:
