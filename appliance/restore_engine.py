@@ -266,6 +266,23 @@ def pending_restore_status(include_missing=False):
                     capture_output=True, text=True, timeout=5, check=False,
                 )
                 journal_lines = (journal.stdout or "").splitlines()
+                journal_text = "\n".join(journal_lines)
+                failure_markers = (
+                    "[RESTORE EXECUTOR] falhou:",
+                    "Main process exited, code=exited",
+                    "Failed to start netdesk-restore-agent@",
+                    "Failed with result 'exit-code'",
+                )
+                if status in running_statuses and any(marker in journal_text for marker in failure_markers):
+                    state = {
+                        **state,
+                        "status": "failed_before_changes" if not state.get("production_touched") else "failed",
+                        "message": "O agente de restore terminou com falha.",
+                        "error_message": "Consulte o Terminal do restore para ver a causa. É possível tentar novamente.",
+                    }
+                    status = state["status"]
+                    data["execution"] = state
+                    data["stage"] = status
                 data["log_tail"] = (_log_tail(80) + journal_lines)[-180:]
             except Exception:
                 pass
